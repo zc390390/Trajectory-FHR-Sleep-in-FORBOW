@@ -16,49 +16,33 @@ library(survminer)
 ```
 
 #Power Analysis
-```{r}
-
-
-
-```
 
 
 
 
-
-#Analysis Begin
+#Graph
 
 ## Load Analytic & Sleep
 ```{r}
-setwd("C:/Users/hubshmz/Documents/Code/git/data")  # FORBOW computer
+# setwd("C:/Users/hubshmz/Documents/Code/git/data")  # FORBOW computer
 # setwd("C:/Users/zachh/Documents/Code/git/Data")  # Laptop
-# setwd("C:/Users/zacha/Documents/RStudio/forbow/git/Data/ESCAP") # Tupper Windows Comp
+setwd("C:/Users/zacha/Documents/RStudio/forbow/git/Data") # Tupper Windows Comp
 # setwd("C:/Users/zacha/Documents/forbow/code/git") # Home Computer
 
-load("~/Code/Git/data/analytic-zach.RData")
-Night <- read.csv("part4_nightsummary_sleep_cleaned.csv")
-Day <- read.csv("part2_daysummary.csv")
+load("analytic-zach.RData")
+Night <- read.csv("part4_summary_sleep_cleaned.csv")
 ```
 ### Actigraphy
 ## Check total valid amount of participants
 ```{r}
-Day <- Day %>%
-  mutate(ValidDay = ifelse(N.valid.hours >= 16, 1, 0)) 
-Day <- Day %>%
-  group_by(filename) %>%
-  summarise(
-    TotalValidWD = sum(ValidDay[weekday %in% c('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday')], na.rm = TRUE),
-    TotalValidWE = sum(ValidDay[weekday %in% c('Saturday', 'Sunday')], na.rm = TRUE)
-  )
+Night <- Night %>% filter(n_WE_nights_complete >= 3 & n_WD_nights_complete >= 1)
 
 
-DayF <- Day %>% filter(TotalValidWD >= 3 & TotalValidWE >= 1)
-DayF$Subject_ID <- substr(DayF$filename, 1, 12)
-DayF$Assessment_Date <- str_extract(DayF$filename, "\\d{4}-\\d{2}-\\d{2}")
-DayFChild <- DayF %>% 
+Night$Subject_ID <- substr(Night$filename, 1, 12)
+Night$Assessment_Date <- str_extract(Night$filename, "\\d{4}-\\d{2}-\\d{2}")
+Night <- Night %>% 
   filter(!str_detect(filename, "F[1-3]|f[1-3]|M[1-3]|m[1-3]|\\$R"))
-DayFParent <- DayF %>% 
-  filter(str_detect(filename, "F[1-3]|f[1-3]|M[1-3]|m[1-3]|\\$R"))
+
 
 bin_files_to_remove <- c(
   "8000103174_left wrist_068158_2025-06-03 10-40-36.bin",
@@ -69,29 +53,206 @@ bin_files_to_remove <- c(
   "800304582__060365_2024-11-05 12-28-01.bin"
 )
 
-DayFChild <- DayFChild %>%
+Night <- Night %>%
   filter(!filename %in% bin_files_to_remove)
-DayFChild <- DayFChild %>%
+Night <- Night %>%
   mutate(Subject_ID = gsub("^800-(\\d{3})-(\\d+)_$", "800-0\\1-\\2", Subject_ID))
 
-DayFChild$Subject_ID <- gsub("-", "", DayFChild$Subject_ID)
-DayFChild$Subject_ID <- gsub("[a-zA-Z]", "", DayFChild$Subject_ID)
-DayFChild$Subject_ID <- gsub("_", "", DayFChild$Subject_ID)
+Night$Subject_ID <- gsub("-", "", Night$Subject_ID)
+Night$Subject_ID <- gsub("[a-zA-Z]", "", Night$Subject_ID)
+Night$Subject_ID <- gsub("_", "", Night$Subject_ID)
 FOR$Subject_ID <- gsub("-", "", as.character(FOR$subject_id))
 ```
 
 ```{r}
-setDT(DayFChild)
+setDT(Night)
 setDT(FOR)
 
-DayFChild[, Assessment_Date := as.Date(Assessment_Date)]
+Night[, Assessment_Date := as.Date(Assessment_Date)]
 FOR[, Assessment_Date := as.Date(assessment_date)]
 #Perform a left join, retaining all rows in day4merge
 ##Performing merge, making day4days, but this only merges individuals who actually have a subject_ID and assessment_date
-setorder(DayFChild, Subject_ID, Assessment_Date)
+setorder(Night, Subject_ID, Assessment_Date)
 setorder(FOR, Subject_ID, Assessment_Date)
-merged <- FOR[DayFChild, on = .(Subject_ID, Assessment_Date), roll = "nearest"]
-unmerged <- FOR[!merged, on = .(Subject_ID, Assessment_Date), roll = "nearest"]
-
-FORm <- rbind(unmerged, merged, fill = TRUE)  
+merged <- FOR[Night, on = .(Subject_ID, Assessment_Date), roll = "nearest"]
 ```
+
+```{r}
+merged$RoundAge <- round(merged$age)
+merged$group <- factor(merged$group,
+                       levels = c(0, 1, 2, 3),
+                       labels = c("Control", "MDD Risk", "BD Risk", "Psy Risk"))
+merged <- merged %>% 
+  filter(!is.na(group))
+merged %>%
+  filter(group != 3)
+
+a <- ggplot(data = merged, mapping = aes(x = RoundAge, y = SleepRegularityIndex1_AD_T5A5_mn, color = group)) +
+  geom_point(alpha = 0.6, size = 3) +
+  geom_smooth(method = "lm", aes(group = group), se = FALSE, linetype = "solid", size = 1) +
+  scale_color_brewer(palette = "Dark2") +  # Darker, distinct colors for categories
+  labs(
+    title = "Sleep Regularity Index Across Age by Group",
+    x = "Age",
+    y = "Sleep Regularity Index",
+    color = "Group"
+  )
+a
+a_f <- ggplot(data = merged, mapping = aes(x = RoundAge, y = SleepRegularityIndex1_AD_T5A5_mn, color = group)) +
+  geom_point(alpha = 0.6, size = 3) +
+  geom_smooth(method = "lm", aes(group = group), se = FALSE, linetype = "solid", size = 1) +
+  scale_color_brewer(palette = "Dark2") +  # Darker, distinct colors for categories
+  labs(
+    title = "Sleep Regularity Index Across Age by Group (Faceted)",
+    x = "Age",
+    y = "Sleep Regularity Index",
+    color = "Group"
+  ) + facet_wrap(~ group)
+a_f
+
+b <- ggplot(data = merged, mapping = aes(x = RoundAge, y = SleepDurationInSpt_AD_T5A5_mn, color = group)) +
+  geom_point(alpha = 0.6, size = 3) +
+  geom_smooth(method = "lm", aes(group = group), se = FALSE, linetype = "solid", size = 1) +
+  scale_color_brewer(palette = "Dark2") +  # Darker, distinct colors for categories
+  labs(
+    title = "Sleep Duration Across Age by Group",
+    x = "Age",
+    y = "Sleep Duration (Hours)",
+    color = "Group"
+  )
+b
+b_f <- ggplot(data = merged, mapping = aes(x = RoundAge, y = SleepDurationInSpt_AD_T5A5_mn, color = group)) +
+  geom_point(alpha = 0.6, size = 3) +
+  geom_smooth(method = "lm", aes(group = group), se = FALSE, linetype = "solid", size = 1) +
+  scale_color_brewer(palette = "Dark2") +  # Darker, distinct colors for categories
+  labs(
+    title = "Sleep Duration Across Age by Group (Faceted)",
+    x = "Age",
+    y = "Sleep Duration (Hours)",
+    color = "Group"
+  ) + facet_wrap(~ group)
+b_f
+
+c <- ggplot(data = merged, mapping = aes(x = sleeponset_AD_T5A5_mn, y = RoundAge, color = group)) +
+  geom_point(alpha = 0.6, size = 3) +
+  geom_smooth(method = "lm", aes(group = group), se = FALSE, linetype = "solid", size = 1) +
+  scale_color_brewer(palette = "Dark2") +  # Darker, distinct colors for categories
+  labs(
+    title = "Sleep Onset Age by Group",
+    x = "Sleep Sleep Onset (Hour)",
+    y = "Age",
+    color = "Group"
+  )
+c
+
+merged$onset_centered <- (merged$sleeponset_AD_T5A5_mn) 
+
+d_f <- ggplot(data = merged, aes(x = RoundAge, y = WASO_AD_T5A5_mn, color = group)) +
+  geom_point(alpha = 0.6, size = 3) +
+  geom_smooth(method = "lm", aes(group = group), se = FALSE, linetype = "solid", size = 1) +
+  scale_color_brewer(palette = "Dark2") +
+  labs(
+    title = "WASO and Age by Group (Faceted)",
+    y = "WASO",
+    x = "Age",
+    color = "Group"
+  ) +
+  facet_wrap(~ group)
+d_f
+
+
+
+e_f <- ggplot(data = merged, aes(x = RoundAge, y = SptDuration_AD_T5A5_mn, color = group)) +
+  geom_point(alpha = 0.6, size = 3) +
+  geom_smooth(method = "lm", aes(group = group), se = FALSE, linetype = "solid", size = 1) +
+  scale_color_brewer(palette = "Dark2") +
+    scale_y_continuous(
+    limits = c(6, 12)) + 
+  labs(
+    title = "Time in Bed and Age by Group All Days(Faceted)",
+    y = "Time in Bed",
+    x = "Age",
+    color = "Group"
+  ) +
+  facet_wrap(~ group)
+e_f
+
+e_f_WE <- ggplot(data = merged, aes(x = RoundAge, y = SptDuration_WE_T5A5_mn, color = group)) +
+  geom_point(alpha = 0.6, size = 3) +
+  geom_smooth(method = "lm", aes(group = group), se = FALSE, linetype = "solid", size = 1) +
+  scale_color_brewer(palette = "Dark2") +
+    scale_y_continuous(
+    limits = c(6, 12)) + 
+  labs(
+    title = "Time in Bed and Age by Group Weekend (Faceted)",
+    y = "Time in Bed",
+    x = "Age",
+    color = "Group"
+  ) +
+  facet_wrap(~ group)
+e_f_WE
+
+e_f_WD <- ggplot(data = merged, aes(x = RoundAge, y = SptDuration_WD_T5A5_mn, color = group)) +
+  geom_point(alpha = 0.6, size = 3) +
+  geom_smooth(method = "lm", aes(group = group), se = FALSE, linetype = "solid", size = 1) +
+  scale_color_brewer(palette = "Dark2") +
+    scale_y_continuous(
+    limits = c(6, 12)) + 
+  labs(
+    title = "Time in Bed and Age by Group Weekday (Faceted)",
+    y = "Time in Bed",
+    x = "Age",
+    color = "Group"
+  ) +
+  facet_wrap(~ group)
+e_f_WD
+
+
+
+
+b_f
+d_f
+
+
+f_f <- ggplot(data = merged, aes(x = RoundAge, y = wakeup_AD_T5A5_mn, color = group)) +
+  geom_point(alpha = 0.6, size = 3) +
+  geom_smooth(method = "lm", aes(group = group), se = FALSE, linetype = "solid", size = 1) +
+  scale_color_brewer(palette = "Dark2") +
+  labs(
+    title = "Sleep Wakeup and Age by Group (Faceted)",
+    y = "Sleep Wakeup (Hours)",
+    x = "Age",
+    color = "Group"
+  ) +
+  facet_wrap(~ group)
+
+
+h_f <- ggplot(data = merged, aes(x = RoundAge, y = number_of_awakenings_AD_T5A5_mn, color = group)) +
+  geom_point(alpha = 0.6, size = 3) +
+  geom_smooth(method = "lm", aes(group = group), se = FALSE, linetype = "solid", size = 1) +
+  scale_color_brewer(palette = "Dark2") +
+  labs(
+    title = "Sleep Awakenings and Age by Group (Faceted)",
+    y = "Sleep Awakenings (# Of Times)",
+    x = "Age",
+    color = "Group"
+  ) +
+  facet_wrap(~ group)
+h_f
+
+
+i_f <- ggplot(data = merged, aes(x = RoundAge, y = duration_sib_wakinghours_AD_T5A5_mn, color = group)) +
+  geom_point(alpha = 0.6, size = 3) +
+  geom_smooth(method = "lm", aes(group = group), se = FALSE, linetype = "solid", size = 1) +
+  scale_color_brewer(palette = "Dark2") +
+  labs(
+    title = "SIB During Awake and Age by Group (Faceted)",
+    y = "SIB Durating Awake (Hours)",
+    x = "Age",
+    color = "Group"
+  ) + facet_wrap(~ group)
+i_f
+```
+
+
+#Main Analysis
