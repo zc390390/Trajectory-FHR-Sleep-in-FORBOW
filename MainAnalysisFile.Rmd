@@ -14,6 +14,8 @@ library(ggplot2)  # Plotting
 library(fuzzyjoin)  # Joins
 library(survminer)
 library(hexbin)
+library(lubridate)
+
 ```
 
 #Power Analysis
@@ -374,6 +376,8 @@ merged1 <- merged1 %>% filter(diffdays <= 179)
 two <- merged1[(Subject_ID %in% c(8000038204, 8000114479))]
 
 
+NightM <- NightM %>%
+  mutate(filename = paste0(ID, "motionlogg"))
 
 NightM$weekday <- NightM$eday
 NightM <- NightM %>% 
@@ -394,10 +398,144 @@ merged <- rbindlist(list(merged1, merged2), fill = TRUE)
 #sleepwakeup
 #sleeponset
 #WASO
+
+#Estimated sleep efficiency
+merged$SE <- (merged$SleepDurationInSpt/merged$SptDuration)*100
+
+#Estimate Sleep Midpiont
+##DOUBLE CHECK THIS CODE WORKS WELL
+merged$sleeponset <- as.POSIXct(merged$sleeponset)
+merged$sleepwake <- as.POSIXct(merged$sleepwake)
+merged$sleep_duration <- difftime(merged$sleepwake, merged$sleeponset, units = "secs")
+negative_index <- which(!is.na(merged$sleep_duration) & merged$sleep_duration < 0)
+merged$sleep_duration[negative_index] <- merged$sleep_duration[negative_index] + 86400  # add 24 hours in seconds
+merged$sleep_midpoint <- merged$sleeponset + (merged$sleep_duration / 2)
+merged$sleep_midpoint_time <- format(merged$sleep_midpoint, "%H:%M:%S")
+
+```
+
+
+#SleepRegularity - dev
+this is kind of insane rn
+```{r}
+merged <- merged %>%
+  group_by(subject_id) %>%
+  arrange(desc(time_point)) %>%
+  mutate(onset_tmrw = lag(sleeponset, 1),
+         wake_tmrw = lag(sleeponset, 1)) %>% ungroup()
+
+
+
+merged <- merged %>%
+  mutate(across(c(sleeponset, wakeup, onset_tmrw, wake_tmrw), as.POSIXct))
+
+
+
+tryone <- merged %>% filter(subject_id == '8000300573')
+
+center_minutes <- function(time_str) {
+  mins <- hour(hms(time_str)) * 60 + minute(hms(time_str)) + second(hms(time_str)) / 60
+  # Add 1440 if before 12:00 (720)
+  mins_shifted <- ifelse(mins < 720, mins + 1440, mins)
+  return(mins_shifted)
+}
+
+merged$sleeponset_minutes <- center_minutes(merged$sleeponset_ts)
+merged$wakeup_minutes <- center_minutes(merged$wakeup_ts)
+
+subject_ids <- unique(merged$subject_id)
+
+#This needs to filter for individual actigraphy too
+merged$SRI2 <- NA_real_
+for (subj in subject_ids) {
+  df_subj <- merged %>%
+    filter(subject_id == subj) %>%
+    arrange(night)
+  
+  actis <- unique(df_subj$filename)  # Only files for this subject
+  
+  for (specacti in actis) {
+    df_subj_acti <- df_subj %>%
+      filter(filename == specacti) %>%
+      arrange(night)
+    
+    print(paste("Processing", subj, specacti))
+    
+    if (nrow(df_subj_acti) > 1) {
+      for(i in 1:(nrow(df_subj_acti) - 1)) {
+        day1 <- df_subj_acti[i, ]
+        day2 <- df_subj_acti[i + 1, ]
+        
+        epoch1 <- 720:(720 + 1440 - 1)
+        epoch2 <- 720:(720 + 1440 - 1)
+        
+      if (!is.na(day1$sleeponset_minutes) && !is.na(day1$wakeup_minutes)) {
+        if(day1$sleeponset_minutes <= day1$wakeup_minutes) {
+          epoch1_binary <- ifelse(epoch1 >= day1$sleeponset_minutes & epoch1 <= day1$wakeup_minutes, 1, 0)
+        } else {
+          epoch1_binary <- ifelse(epoch1 >= day1$sleeponset_minutes | epoch1 <= day1$wakeup_minutes, 1, 0)
+        }
+      } else {
+        # Handle missing values — for example:
+        epoch1_binary <- rep(NA, length(epoch1))
+      }
+      
+      if (!is.na(day2$sleeponset_minutes) && !is.na(day2$wakeup_minutes)) {
+        if(day2$sleeponset_minutes <= day2$wakeup_minutes) {
+          epoch2_binary <- ifelse(epoch2 >= day2$sleeponset_minutes & epoch2 <= day2$wakeup_minutes, 1, 0)
+        } else {
+          epoch2_binary <- ifelse(epoch2 >= day2$sleeponset_minutes | epoch2 <= day2$wakeup_minutes, 1, 0)
+        }
+      } else {
+        epoch2_binary <- rep(NA, length(epoch2))
+      }
+        
+        valid_idx <- !is.na(epoch1_binary) & !is.na(epoch2_binary)
+
+        if (any(valid_idx)) {
+          percent_match <- mean(epoch1_binary[valid_idx] == epoch2_binary[valid_idx]) * 100
+        } else {
+          percent_match <- NA_real_
+        }
+                
+        # Print days and sleep onset/wake info
+        # print(paste0(
+        #   "Comparing nights: ", day1$night, " vs ", day2$night, " | ",
+        #   "Day1 SleepOnset: ", round(day1$sleeponset_minutes,1), " min, Wakeup: ", round(day1$wakeup_minutes,1), " min | ",
+        #   "Day2 SleepOnset: ", round(day2$sleeponset_minutes,1), " min, Wakeup: ", round(day2$wakeup_minutes,1), " min | ",
+        #   "Match %: ", round(percent_match, 2), "%"
+        # ))
+        # 
+        merged_idx <- which(
+          merged$subject_id == subj & 
+          merged$filename == specacti & 
+          merged$night == day1$night
+        )
+        
+        merged$SRI2[merged_idx] <- percent_match
+      }
+    }
+  }
+}
+
+merged$SRI2_scaled <- (merged$SRI2 * 2) - 100
+
+
+table(merged$SRI2)
+
+look <- merged %>% select(SleepRegularityIndex1, SRI2_scaled)
+
 ```
 
 #Non-Mean Graphing
 ```{r}
+merged <- merged %>%
+  mutate(fhr = ifelse(group %in% c(1, 2, 3), 1, 0))
+
+
+merged$fhr <- factor(merged$fhr,
+                       levels = c(0, 1),
+                       labels = c("Control", "FHR"))
 merged$group <- factor(merged$group,
                        levels = c(0, 1, 2, 3),
                        labels = c("Control", "MDD Risk", "BD Risk", "Psy Risk"))
@@ -432,9 +570,9 @@ pander(table(merged$group))
 
 ##Sleep Regularity Index
 ```{r}
-a_f_WE <- ggplot(data = merged, aes(x = age, y = SleepRegularityIndex1, color = group)) +
+a_f_WE <- ggplot(data = merged, aes(x = age, y = SRI2, color = fhr)) +
   geom_jitter(alpha = 0.3, width = 0.2, height = 0.5, size = 1.5) +
-  geom_smooth(aes(group = group, color = as.factor(group)), method = "gam", se = FALSE, size = 1) +
+  geom_smooth(aes(group = fhr, color = as.factor(fhr)), method = "gam", se = FALSE, size = 1) +
   scale_color_brewer(palette = "Dark2") +
   scale_y_continuous(limits = c(10, 90), breaks = seq(10, 90, by = 10)) +
   labs(
@@ -443,29 +581,25 @@ a_f_WE <- ggplot(data = merged, aes(x = age, y = SleepRegularityIndex1, color = 
     y = "Sleep Regularity Index",
     fill = "Count",
     color = "Group"
-  ) + facet_wrap(~ sex)
+  ) 
 a_f_WE
-
-
-
 ```
 
 
-##Time Spent Inactive During Sleep Window
+##Total Sleep time
+###Time Spent Inactive During Sleep Window
 ```{r}
 merged$SleepDurationInSpt <- as.numeric(merged$SleepDurationInSpt)
 
 
-
-
-b_f_WE <- ggplot(data = merged, mapping = aes(x = age, y = SleepDurationInSpt, color = group)) +
+b_f_WE <- ggplot(data = merged, mapping = aes(x = age, y = SleepDurationInSpt, color = fhr)) +
   geom_jitter(alpha = 0.1, width = 0.2, height = 0.5, size = 1.2) +
   geom_smooth(
     method = "gam",
     se = FALSE,
     linetype = "solid",
     size = 2,  # thicker
-    aes(group = group, color = group)  # reassert color by group for clarity
+    aes(group = fhr, color = fhr)  # reassert color by group for clarity
   ) +
   scale_color_brewer(palette = "Dark2") + 
   scale_y_continuous(
@@ -481,7 +615,7 @@ b_f_WE <- ggplot(data = merged, mapping = aes(x = age, y = SleepDurationInSpt, c
   theme_minimal()
 b_f_WE 
 
-ggplot(merged, aes(x = age, color = group, fill = group)) +
+ggplot(merged, aes(x = age, color = fhr, fill = fhr)) +
   geom_density(alpha = 0.4) +
   scale_color_brewer(palette = "Dark2") +
   scale_fill_brewer(palette = "Dark2") +
@@ -492,19 +626,19 @@ ggplot(merged, aes(x = age, color = group, fill = group)) +
     color = "Group",
     fill = "Group"
   ) +
-  theme_minimal() + facet_wrap(~ group)
+  theme_minimal() + facet_wrap(~ fhr)
 
 merged$day_type <- ifelse(merged$weekday %in% c("Saturday", "Sunday", "Sat", "Sun"), "Weekend", "Weekday")
 merged$day_type <- factor(merged$day_type, levels = c("Weekday", "Weekend"))
 
-b_f_WE <- ggplot(data = merged, mapping = aes(x = age, y = SleepDurationInSpt, color = group)) +
+b_f_WE <- ggplot(data = merged, mapping = aes(x = age, y = SleepDurationInSpt, color = fhr)) +
   geom_jitter(alpha = 0.1, width = 0.2, height = 0.5, size = 1.2) +
   geom_smooth(
     method = "gam",
     se = FALSE,
     linetype = "solid",
     size = 2,
-    aes(group = group, color = group)
+    aes(group = fhr, color = fhr)
   ) +
   scale_color_brewer(palette = "Dark2") + 
   scale_y_continuous(
@@ -517,11 +651,42 @@ b_f_WE <- ggplot(data = merged, mapping = aes(x = age, y = SleepDurationInSpt, c
     y = "Sleep Duration (Hours)",
     color = "Group"
   )  +
-  facet_grid(day_type ~ group) +   # rows = day type, columns = group
+  facet_grid(day_type ~ fhr) +   # rows = day type, columns = group
   theme_minimal()
 b_f_WE
 ```
-##Extreme sleep duration
+##Sleep Efficiency
+```{r}
+b_f_WE <- ggplot(data = merged, mapping = aes(x = age, y = SE, color = fhr)) +
+  geom_jitter(alpha = 0.1, width = 0.2, height = 0.5, size = 1.2) +
+  geom_smooth(
+    method = "gam",
+    se = FALSE,
+    linetype = "solid",
+    size = 2,  # thicker
+    aes(group = fhr, color = fhr)  # reassert color by group for clarity
+  ) +
+  scale_color_brewer(palette = "Dark2") + 
+  scale_y_continuous(
+    limits = c(0, 100),
+    breaks = seq(0, 100, by = 20)
+  ) +
+  labs(
+    title = "Sleep Efficiency Across Age by Family Risk All Days",
+    x = "Age",
+    y = "Sleep Efficiency",
+    color = "Group"
+  )  +
+  theme_minimal()
+b_f_WE 
+```
+
+##Sleep Midpoint
+
+##Relative Ampitude
+
+##Exploratory Analysis
+###Extreme sleep duration
 ```{r}
 merged <- merged %>%
   mutate(
@@ -559,89 +724,6 @@ b_fa_WE
 
 ```
 
-##Total Sleep Window Time
-```{r}
-
-#All Days
-c_f_WE <- ggplot(data = merged, aes(x = age, y = SptDuration, color = group)) +
-  geom_jitter(alpha = 0.1, width = 0.2, height = 0.5, size = 1.2) +
-  geom_smooth(method = "gam", aes(group = group), se = FALSE, linetype = "solid", size = 2) +
-  scale_color_brewer(palette = "Dark2") +
-    scale_y_continuous(
-    limits = c(6, 12)) + 
-  labs(
-    title = "Time in Bed and Age by Group All Days (Faceted)",
-    y = "Time in Bed",
-    x = "Age",
-    color = "Group"
-  ) + theme_minimal() 
-c_f_WE
-```
-
-##Sleep Onset
-```{r}
-
-#All Days
-d_f_WE <- ggplot(data = merged, mapping = aes( x = age, y = sleeponset, color = group)) +
-  geom_jitter(alpha = 0.1, width = 0.2, height = 0.5, size = 1.2) +
-  geom_smooth(method = "gam", aes(group = group), se = FALSE, linetype = "solid", size = 2) +
-  scale_color_brewer(palette = "Dark2") + 
-  scale_y_continuous(
-    limits = c(20, 28),
-    breaks = seq(20, 28, by = 2)
-  ) +
-  labs(
-    title = "Sleep Onset Age by Group All Days (Faceted)",
-    x = "Age",
-    y = "Sleep Sleep Onset (Hours, 24 is Midnight)",
-    color = "Group"
-  ) + theme_minimal() 
-d_f_WE
-
-
-```
-
-##Sleep Wakeup
-```{r}
-
-#All Days
-e_f_WE <- ggplot(data = merged, aes(x = age, y = wakeup, color = group)) +
-  geom_jitter(alpha = 0.1, width = 0.2, height = 0.5, size = 1.2) +
-  geom_smooth(method = "gam", aes(group = group), se = FALSE, linetype = "solid", size = 2) +
-  scale_color_brewer(palette = "Dark2") +
-    scale_y_continuous(
-    limits = c(28, 36),
-    breaks = seq(28, 36, by = 2)
-  ) +
-  labs(
-    title = "Sleep Wakeup and Age by Group All Days (Faceted)",
-    y = "Sleep Wakeup (Hours)",
-    x = "Age",
-    color = "Group"
-  )  + theme_minimal() 
-e_f_WE
-```
-
-
-##WASO
-```{r}
-#weekend
-f_f_WE <- ggplot(data = merged, aes(x = age, y = WASO, color = group)) +
-  geom_jitter(alpha = 0.1, width = 0.2, height = 0.5, size = 1.2) +
-  geom_smooth(method = "gam", aes(group = group), se = FALSE, linetype = "solid", size = 2) +
-  scale_color_brewer(palette = "Dark2") +
-    scale_y_continuous(
-    limits = c(0, 3),
-    breaks = seq(0, 3, by = 1)
-  ) +
-  labs(
-    title = "WASO and Age by Group All Days (Faceted)",
-    y = "WASO",
-    x = "Age",
-    color = "Group"
-  ) + theme_minimal() 
-f_f_WE
-```
 
 
 #power
