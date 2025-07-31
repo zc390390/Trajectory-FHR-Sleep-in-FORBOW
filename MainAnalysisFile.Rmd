@@ -332,6 +332,7 @@ load("analytic-zach.RData")
 Night <- read.csv("part4_nightsummary_sleep_cleaned.csv")
 NightM <- read_excel("motionloggerdata.xlsx")
 
+
 Night$Subject_ID <- substr(Night$filename, 1, 12)
 Night$Assessment_Date <- str_extract(Night$filename, "\\d{4}-\\d{2}-\\d{2}")
 Night <- Night %>% 
@@ -742,3 +743,8 @@ pwr.t2n.test(n1=19, n2=291, d=0.2, sig.level=0.05, alternative="two.sided")
 
 
 #Main Analysis
+##TST
+```{r}
+model1 <- lmer(SleepDurationInSpt ~ age + sex + bmi + groupmdd + grouppsy + groupbp + (1|subject_id) + (1|filename) + (1|subject_id), data = merged)
+```
+##SE
