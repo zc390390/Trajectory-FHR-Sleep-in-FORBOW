@@ -22,8 +22,8 @@ library(zoo)
 
 #Non-Mean Exploration
 ```{r}
-# setwd("C:/Users/hubshmz/Documents/Code/git/data")  # FORBOW computer
-setwd("C:/Users/zachh/Documents/Code/git/Data")  # Laptop
+setwd("C:/Users/hubshmz/Documents/Code/git/data")  # FORBOW computer
+# setwd("C:/Users/zachh/Documents/Code/git/Data")  # Laptop
 # setwd("C:/Users/zacha/Documents/RStudio/forbow/git/Data") # Tupper Windows Comp
 # setwd("C:/Users/zacha/Documents/forbow/code/git") # Home Computer
 
@@ -125,7 +125,11 @@ NightM <- NightM %>%
 setDT(NightM)
 NightM[, Assessment_Date := as.Date(sdate)]
 NightM$Assessment_date_nightM <- NightM$Assessment_Date
+
+
 merged2 <- NightM[FOR, on = .(Subject_ID), allow.cartesian = TRUE]
+
+
 merged2[, diffdays := abs(as.numeric(difftime(Assessment_date_nightM, Assessment_Date_FOR, units = "days")))]
 merged2 <- merged2 %>% filter(diffdays <= 179)
 merged2$motionlogger <- 1
@@ -532,6 +536,7 @@ b_f_WE <- ggplot(data = merged, mapping = aes(x = age, y = SleepDurationInSpt, c
     aes(group = groupmddrisk, color = groupmddrisk)  # reassert color by group for clarity
   ) +
   scale_color_brewer(palette = "Dark2") + 
+  scale_x_continuous(limits = c(8,22), breaks = seq(8, 22, by = 2)) +
   scale_y_continuous(
     limits = c(4, 12),
     breaks = seq(4, 12, by = 2)
@@ -828,8 +833,9 @@ summary(model3)
 ##Hypothesis 2: Trajectories  
 ```{r}
 merged <- merged %>% filter(age >= 8 & age <= 22)
+merged <- merged %>% filter(group != 'Psy Risk')
 
-
+table(merged$group)
 
 ```
 
@@ -861,15 +867,9 @@ linear <- gamm4(SleepDurationInSpt ~ fhr + sex + ccMDD + age,
                    data = merged)
 
 
-nonlinear <- gamm4(SleepDurationInSpt ~ fhr + sex + ccMDD + s(age, by = fhr, k = 10),
+nonlinear <- gamm4(SleepDurationInSpt ~ fhr + sex + ccMDD + s(age, by = fhr, k = 5),
                    random = ~(1 | fid/ subject_id / filename),
                    data = merged)
-nonlinear20 <- gamm4(SleepDurationInSpt ~ fhr + sex + ccMDD + s(age, by = fhr, k = 20),
-                   random = ~(1 | fid/ subject_id / filename),
-                   data = merged)
-n10 <- nonlinear10$gam
-n20 <- nonlinear20$gam
-anova(n10, n20)
 
 
 #Extract merMod objects
@@ -879,7 +879,12 @@ anova(linear_ml, nonlinear_ml)
 
 gam.check(nonlinear$gam)
 
+summary(nonlinear$gam)
+summary(nonlinear$mer)
+```
 
+####Graph
+```{r}
 # 3. Calculate difference smooth between groups
 diff <- difference_smooths(nonlinear$gam,
                            select = "s(age)",
@@ -1122,6 +1127,42 @@ Add in 3 groups: Controls w/o dep, FHR w/o dep, those with depression (look at t
 
 ###SE
 ```{r}
+#Model Testing 
+merged$subject_id <- as.factor(merged$subject_id)
+
+#Just subject_id intercept and adding filename
+model1 <- lmer(SE ~ fhr + sex + ccMDD + age + (1|subject_id ), data = merged)
+model2 <- lmer(SE ~ fhr + sex + ccMDD +  age + (1|subject_id / filename), data = merged)
+anova(model1, model2)
+
+#Adding fid to interept
+model3 <- lmer(SE ~ fhr + sex + ccMDD + age + (1| fid /subject_id / filename), data = merged)
+anova(model2, model3)
+
+
+#Comparing a linear to nonlinear model
+linear <- gamm4(SE ~ fhr + sex + ccMDD + age,
+                   random = ~(1 | fid / subject_id / filename),
+                   data = merged)
+
+nonlinear <- gamm4(SE ~ fhr + sex + ccMDD + s(age, by = fhr),
+                   random = ~(1 | fid/ subject_id / filename),
+                   data = merged)
+
+
+
+linear_ml <- linear$mer
+nonlinear_ml <- nonlinear$mer
+anova(linear_ml, nonlinear_ml)
+
+summary(nonlinear$gam)
+gam.check(nonlinear$gam)
+
+
+
+
+
+
 library(gamm4)
 library(gratia)
 
@@ -1129,8 +1170,8 @@ library(mgcv)
 merged$subject_id <- as.factor(merged$subject_id)
 
 
-gam_model <- gam(SE ~ fhr + sex + ccMDD + BMI_filled +
-                   s(age, by = fhr, k = 25) +
+gam_model <- gam(SE ~ fhr + sex + ccMDD +
+                   s(age, by = fhr, k = 10) +
                    s(subject_id, bs = "re"),
                  data = merged, method = "REML")
 gam.check(gam_model)
@@ -1138,17 +1179,16 @@ gam.check(gam_model)
 diff <- difference_smooths(gam_model, smooth = "s(age)", by = "fhr",
                            comp = list(fhr = c("FHR", "Control")))
 draw(diff)
+
+
+
 age_seq <- seq(min(merged$age), max(merged$age), length.out = 200)
-bmi_seq <- seq(
-  min(merged$BMI_filled, na.rm = TRUE),
-  max(merged$BMI_filled, na.rm = TRUE),
-  length.out = 200
-)
+
+# Create a new data frame with average covariate values
 newdat <- expand.grid(
   age = age_seq,
   fhr = factor(levels(merged$fhr), levels = levels(merged$fhr)),
   sex = factor(levels(merged$sex)[1], levels = levels(merged$sex)),
-  BMI_filled = bmi_seq,
   ccMDD = "0"  # character matching merged$ccMDD values
 )
 
@@ -1166,7 +1206,7 @@ newdat <- newdat %>%
 
 # 6. Plot adjusted smooths for groups with ggplot
 
-balrgA <- ggplot(newdat, aes(x = age, y = fit, color = fhr)) +
+ggplot(newdat, aes(x = age, y = fit, color = fhr)) +
   geom_line(size = 1.2) +
   geom_ribbon(aes(ymin = lower, ymax = upper, fill = fhr), alpha = 0.2, color = NA) +
   scale_y_continuous(limits = c(60,100), breaks = seq(60,100, by = 20)) +
@@ -1179,9 +1219,6 @@ scale_fill_manual(values = c("Control" = "#6699FF", "FHR" = "#FF6666")) +
        color = "Group",
        fill = "Group") +
   theme_minimal()
-
-print(balrg)
-print(balrgA)
 ```
 
 ###Midpoint
@@ -1201,7 +1238,7 @@ draw(diff)
 #CSV
 ```{r}
 # Load into a temporary environment to avoid corrupting your global one
-setwd("C:/Users/zachh/Documents/Code/git/Data") 
+setwd("C:/Users/hubshmz/Documents/Code/git/data")  # FORBOW computer
 temp_env <- new.env()
 load("analytic-zach.RData", envir = temp_env)
 
