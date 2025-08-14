@@ -7,23 +7,54 @@ output: html_document
 
 # Library & Notes
 ```{r setup, include=FALSE}
-library(haven); library(dplyr); library(tidyr); library(readr); library(readxl); library(data.table); library(stringr); library(purrr)  # Data manipulation & import
-library(lme4); library(lmerTest); library(coxme); library(survival); library(broom); library(MuMIn); library(lsmeans)  # Modeling & statistics
-library(pander); library(apaTables); library(flextable); library(officer); library(webshot2)  # Tables & reporting
-library(ggplot2)  # Plotting
-library(fuzzyjoin)  # Joins
-library(survminer)
-library(lubridate)
-library(zoo)
+## ─────────────────────────────
+## 📦 Data Import & Manipulation
+## ─────────────────────────────
+library(haven)       # Read SPSS, SAS, Stata files
+library(readr)       # Read CSVs
+library(readxl)      # Read Excel files
+library(data.table)  # Fast data manipulation
+library(dplyr)       # Data manipulation
+library(tidyr)       # Data tidying
+library(stringr)     # String operations
+library(purrr)       # Functional programming
+library(zoo)         # Time series & rolling functions
+library(lubridate)   # Dates & times
+library(fuzzyjoin)   # Fuzzy matching joins
 
-#library(hexbin)
-#library(pwr)
+## ─────────────────────────────
+## 📊 Modeling & Statistics
+## ─────────────────────────────
+library(lme4)        # Mixed-effects models
+library(lmerTest)    # p-values for lmer
+library(coxme)       # Cox mixed-effects models
+library(survival)    # Survival analysis
+library(MuMIn)       # Model selection & R²
+library(lsmeans)     # Least-squares means (now emmeans)
+library(mgcv)        # Generalized Additive Models
+library(gratia)      # GAM diagnostics & visualization
+library(gamm4)       # GAMM fitting
+
+## ─────────────────────────────
+## 📑 Tables & Reporting
+## ─────────────────────────────
+library(broom)       # Tidy model output
+library(pander)      # Pretty markdown tables
+library(apaTables)   # APA-style tables
+library(flextable)   # Formatted tables
+library(officer)     # Export to Word/PowerPoint
+library(webshot2)    # Save HTML tables/images
+
+## ─────────────────────────────
+## 🎨 Plotting & Visualization
+## ─────────────────────────────
+library(ggplot2)     # General plotting
 ```
 
 #Non-Mean Exploration
 ```{r}
-# setwd("C:/Users/hubshmz/Documents/Code/git/data")  # FORBOW computer
-setwd("C:/Users/zachh/Documents/Code/git/Data")  # Laptop
+setwd("C:/Users/hubshmz/Documents/Code/git/data")  # FORBOW computer
+# setwd("C:/Users/zachh/Documents/Code/git/Data")  # Laptop
 # setwd("C:/Users/zacha/Documents/RStudio/forbow/git/Data") # Tupper Windows Comp
 # setwd("C:/Users/zacha/Documents/forbow/code/git") # Home Computer
 
@@ -59,8 +90,6 @@ FOR <- FOR %>%
     BMI_filled = if_else(
       is.na(BMI_filled),
       rollapplyr(BMI_filled, width = 5, FUN = function(x) {
-        # x is a vector of length 3: previous, current (NA), next
-        # remove NA's and take median
         median(x[!is.na(x)], na.rm = TRUE)
       }, partial = TRUE, fill = NA),
       BMI_filled
@@ -189,7 +218,7 @@ tryone <- merged %>% filter(subject_id == '8000300573')
 
 
 merged$time_onset <- format(merged$sleeponset_time, format = "%H:%M:%S")
-merged$sleeponset_minutes <- hour(hms(merged$time_onset)) * 60 +
+merged$sleeponset_minutes <- hour(hms(merged$time_onset)) * 60
                              minute(hms(merged$time_onset)) +
                              second(hms(merged$time_onset)) / 60
 merged$sleeponset_minutes <- merged$sleeponset_minutes + 720
@@ -209,81 +238,39 @@ subject_ids <- unique(merged$subject_id)
 merged$SRI2 <- NA_real_
 merged$night <- as.numeric(merged$night)
 
-for (subj in subject_ids) {
-  df_subj <- merged %>%
-    filter(subject_id == subj) %>%
-    arrange(night)
+make_binary <- function(onset, wake) {
+  epoch <- 720:(720 + 1440 - 1)
   
-  actis <- unique(df_subj$filename)  # Only files for this subject
+  if (is.na(onset) || is.na(wake)) {
+    return(rep(NA, length(epoch)))
+  }
   
-  for (specacti in actis) {
-    df_subj_acti <- df_subj %>%
-      filter(filename == specacti) %>%
-      arrange(night)
-    
-    print(paste("Processing", subj, specacti))
-    
-    if (nrow(df_subj_acti) > 1) {
-      for(i in 1:(nrow(df_subj_acti) - 1)) {
-        day1 <- df_subj_acti[i, ]
-        day2 <- df_subj_acti[i + 1, ]
-        
-        # Check if nights are consecutive
-        if ((day2$night - day1$night) != 1) {
-          # Not consecutive nights, skip this pair
-          next
-        }
-        
-        epoch1 <- 720:(720 + 1440 - 1)
-        epoch2 <- 720:(720 + 1440 - 1)
-        
-        
-        
-        if (!is.na(day1$sleeponset_minutes) && !is.na(day1$wakeup_minutes)) {
-          if(day1$sleeponset_minutes <= day1$wakeup_minutes) {
-            epoch1_binary <- ifelse(epoch1 >= day1$sleeponset_minutes & epoch1 <= day1$wakeup_minutes, 1, 0)
-          } else {
-            epoch1_binary <- ifelse(epoch1 >= day1$sleeponset_minutes | epoch1 <= day1$wakeup_minutes, 1, 0)
-          }
-        } else {
-          epoch1_binary <- rep(NA, length(epoch1))
-        }
-        
-        if (!is.na(day2$sleeponset_minutes) && !is.na(day2$wakeup_minutes)) {
-          if(day2$sleeponset_minutes <= day2$wakeup_minutes) {
-            epoch2_binary <- ifelse(epoch2 >= day2$sleeponset_minutes & epoch2 <= day2$wakeup_minutes, 1, 0)
-          } else {
-            epoch2_binary <- ifelse(epoch2 >= day2$sleeponset_minutes | epoch2 <= day2$wakeup_minutes, 1, 0)
-          }
-        } else {
-          epoch2_binary <- rep(NA, length(epoch2))
-        }
-        
-        valid_idx <- !is.na(epoch1_binary) & !is.na(epoch2_binary)
-        
-        if (any(valid_idx)) {
-          percent_match <- mean(epoch1_binary[valid_idx] == epoch2_binary[valid_idx]) * 100
-        } else {
-          percent_match <- NA_real_
-        }
-        
-        # Print days and sleep onset/wake info
-        print(paste0(
-          "Comparing nights: ", day1$night, " vs ", day2$night, 
-          " | Match %: ", round(percent_match, 2), "%"
-        ))
-        
-        merged_idx <- which(
-          merged$subject_id == subj & 
-          merged$filename == specacti & 
-          merged$night == day1$night
-        )
-        
-        merged$SRI2[merged_idx] <- percent_match
-      }
-    }
+  if (onset <= wake) {
+    return(ifelse(epoch >= onset & epoch <= wake, 1, 0))
+  } else {
+    return(ifelse(epoch >= onset | epoch <= wake, 1, 0))
   }
 }
+
+merged <- merged %>%
+  arrange(subject_id, filename, night) %>%
+  group_by(subject_id, filename) %>%
+  mutate(
+    epoch_binary = purrr::map2(sleeponset_minutes, wakeup_minutes, make_binary),
+    
+    next_binary  = dplyr::lead(epoch_binary),
+    next_night   = dplyr::lead(night),
+    
+    SRI2 = purrr::map2_dbl(epoch_binary, next_binary, ~{
+      if (is.null(.x) || is.null(.y)) return(NA_real_)
+      valid_idx <- !is.na(.x) & !is.na(.y)
+      if (!any(valid_idx)) return(NA_real_)
+      mean(.x[valid_idx] == .y[valid_idx]) * 100
+    }) %>%
+      ifelse((next_night - night) != 1, NA_real_, .)
+  ) %>%
+  ungroup() %>%
+  select(-epoch_binary, -next_binary, -next_night)
 
 
 
@@ -296,7 +283,7 @@ look <- merged %>% select(SleepRegularityIndex1, SRI2_scaled)
 
 ```
 
-#Non-Mean Graphing
+#Data Setup
 ```{r}
 merged <- merged %>%
   mutate(fhr = ifelse(group %in% c(1, 2, 3), 1, 0))
@@ -371,6 +358,7 @@ merged <- merged %>%
     )
   )
 ```
+#Non-Mean Graphing
 ##Density plot
 ```{r}
 library(ggplot2)
@@ -383,12 +371,10 @@ p1 <- ggplot(sum, aes(x = SRI2m)) +
   labs(title = "SRI Mean", x = "SRI (0–100)", y = "Density") +
   theme_minimal()
 
-# Plot 2: SE mean
-p2 <- ggplot(sum, aes(x = SEm)) +
-  geom_density(fill = "forestgreen", alpha = 0.5, color = "black") +
-  scale_x_continuous(limits = c(70, 100), breaks = seq(70, 100, 10)) +
-  labs(title = "Sleep Efficiency Mean", x = "SE (%)", y = "Density") +
-  theme_minimal()
+# Plot 2: Age
+p2 <- ggplot(sum, aes (x = age)) + geom_density(fill = "forestgreen", alpha = 0.5, color = "black") +
+  scale_x_continuous(limits = c(8,22), breaks = seq(8,22, 2)) +
+  labs(title = "Age Distribution", x = "Age", y = "Density") + theme_minimal()
 
 # Plot 3: TST mean
 p3 <- ggplot(sum, aes(x = TSTm)) +
@@ -410,6 +396,8 @@ p4 <- ggplot(sum, aes(x = SleepMidm_hours)) +
   scale_x_continuous(limits = c(0, 8), breaks = seq(0, 8, 2)) +
   labs(title = "Sleep Midpoint Mean", x = "Time of Day (hrs)", y = "Density") +
   theme_minimal()
+
+
 
 # Combine into 2x2 layout
 (p1 | p2) /
@@ -463,17 +451,6 @@ a_f_WE <- ggplot(data = sum, aes(x = age, y = SRI2m, color = fhr)) +
     color = "Group"
   ) 
 a_f_WE
-
-
-ggplot(sum, aes(x = SRI2m)) +
-  geom_density(fill = "steelblue", alpha = 0.5, color = "black") +
-  scale_x_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 20)) +
-  labs(
-    title = "Distribution of Sleep Regularity Index",
-    x = "Sleep Regularity Index",
-    y = "Density"
-  ) +
-  theme_minimal()
 ```
 
 
@@ -597,54 +574,6 @@ b_f_WE
 
 summary(merged$groupmddrisk)
 ```
-##Sleep Efficiency
-```{r}
-b_f_WE <- ggplot(data = merged, mapping = aes(x = age, y = SE, color = fhr)) +
-  geom_jitter(alpha = 0.1, width = 0.2, height = 0.5, size = 1.2) +
-  geom_smooth(
-    method = "gam",
-    se = FALSE,
-    linetype = "solid",
-    size = 2,  # thicker
-    aes(group = fhr, color = fhr)  # reassert color by group for clarity
-  ) +
-  scale_color_brewer(palette = "Dark2") + 
-  scale_y_continuous(
-    limits = c(0, 100),
-    breaks = seq(0, 100, by = 20)
-  ) +
-  labs(
-    title = "Sleep Efficiency Across Age by Family Risk All Days",
-    x = "Age",
-    y = "Sleep Efficiency",
-    color = "Group"
-  )  +
-  theme_minimal()
-b_f_WE 
-
-b_f_WE <- ggplot(data = sum, mapping = aes(x = age, y = SEm, color = fhr)) +
-  geom_jitter(alpha = 0.1, width = 0.2, height = 0.5, size = 1.2) +
-  geom_smooth(
-    method = "gam",
-    se = FALSE,
-    linetype = "solid",
-    size = 2,  # thicker
-    aes(group = fhr, color = fhr)  # reassert color by group for clarity
-  ) +
-  scale_color_brewer(palette = "Dark2") + 
-  scale_y_continuous(
-    limits = c(60, 100),
-    breaks = seq(60, 100, by = 10)
-  ) +
-  labs(
-    title = "Sleep Efficiency Across Age by Family Risk All Days",
-    x = "Age",
-    y = "Sleep Efficiency",
-    color = "Group"
-  )  +
-  theme_minimal()
-b_f_WE 
-```
 
 ##Sleep Midpoint
 ```{r}
@@ -695,8 +624,8 @@ b_f_WE <- ggplot(data = sum, mapping = aes(x = age, y = SleepMidm, color = fhr))
     date_breaks = "2 hours"
   ) +
   scale_x_continuous(
-  limits = c(4, 26),
-  breaks = seq(4, 26, by = 2)
+  limits = c(8, 22),
+  breaks = seq(8, 22, by = 2)
 ) +
   labs(
     title = "Sleep Midpoint Across Age by Family Risk (All Days)",
@@ -707,14 +636,26 @@ b_f_WE <- ggplot(data = sum, mapping = aes(x = age, y = SleepMidm, color = fhr))
   theme_minimal()
 
 b_f_WE
+
+ggplot(sum, aes(x = age, y = SleepMidm, color = fhr, fill = fhr)) +
+  geom_jitter(alpha = 0.1, width = 0.2, height = 0.5, size = 1.2) +
+  geom_smooth(method = "gam", se = FALSE, linetype = "solid", size = 2, aes(group = fhr)) +
+  geom_violin(alpha = 0.2, width = 0.5, color = NA, position = position_nudge(x = 0)) +
+  scale_color_brewer(palette = "Dark2") +
+  scale_fill_brewer(palette = "Dark2") +
+  scale_y_datetime(date_labels = "%H:%M", date_breaks = "2 hours") +
+  scale_x_continuous(limits = c(8, 22), breaks = seq(8, 22, by = 2)) +
+  labs(
+    title = "Sleep Midpoint Across Age by Family Risk (All Days)",
+    x = "Age",
+    y = "Sleep Midpoint (Time of Day)",
+    color = "Group",
+    fill = "Group"
+  ) +
+  theme_minimal()
 ```
 
-##Relative Ampitude
-
-
-
-##Exploratory Analysis
-###Extreme sleep duration
+###Exploratory Analysis - Extreme sleep duration
 ```{r}
 merged <- merged %>%
   mutate(
@@ -754,128 +695,9 @@ b_fa_WE
 
 
 
-#power
-```{r}
-#112 Control
-#61 At risk BP
-#118 at risk MDD
-#19 At risk Psychosis
-
-##Psychosis Test
-#131 - 1 - 3(covariates) - 1(dummy group variable)
-library(pwr)
-pwr.f2.test(u = 1, v = 126, sig.level = 0.01, power = 0.90)
-
-
-##At risk MDD
-pwr.f2.test(u = 1, v = 225, sig.level = 0.01, power = 0.90)
-
-#At risk BP
-pwr.f2.test(u = 1, v = 168, sig.level = 0.01, power = 0.90)
-
-```
-
 
 #Main Analysis
-##Hypothesis 1: FHR is associated with differential objective sleep. 
-```{r}
-
-
-merged <- merged %>%
-  mutate(
-    mddrisk = ifelse(group == "MDD Risk", 1, 0),
-    bdrisk  = ifelse(group == "BD Risk", 1, 0),
-    psyrisk = ifelse(group == "Psy Risk", 1, 0)
-  )
-
-
-```
-###TST
-```{r}
-# No effects
-model0 <- lmer(SleepDurationInSpt ~ 1 + (1 | fid /Subject_ID / filename), data = merged, REML = FALSE)
-
-# Add main predictors
-model1 <- lmer(SleepDurationInSpt ~ mddrisk + bdrisk + psyrisk + (1 | fid /  Subject_ID / filename), data = merged, REML = FALSE)
-
-# Add demographics: age and sex
-model2 <- lmer(SleepDurationInSpt ~ mddrisk + bdrisk + psyrisk + age + sex + (1 | fid / Subject_ID / filename), data = merged, REML = FALSE)
-
-# Add BMI - WARNING: WE ARE MISSING PARTICIPANTS WITH BMI SCORES, IMPUTE?
-model3 <- lmer(SleepDurationInSpt ~ mddrisk + bdrisk + psyrisk + age + sex + BMI + (1 | fid / Subject_ID / filename), data = merged, REML = FALSE)
-
-# Compare models with likelihood ratio tests
-anova(model0, model1, model2)
-
-summary(model0)
-```
-###SRI
-```{r}
-# No effects
-model0 <- lmer(SRI2_scaled ~ 1 + (1 | fid /  Subject_ID / filename), data = merged, REML = FALSE)
-
-# Add main predictors
-model1 <- lmer(SRI2_scaled ~ mddrisk + bdrisk + psyrisk + (1 | fid / Subject_ID / filename), data = merged, REML = FALSE)
-
-# Add demographics: age and sex
-model2 <- lmer(SRI2_scaled ~ mddrisk + bdrisk + psyrisk + age + sex + (1 | fid / Subject_ID / filename), data = merged, REML = FALSE)
-
-# Add BMI - WARNING: WE ARE MISSING PARTICIPANTS WITH BMI SCORES, IMPUTE?
-model3 <- lmer(SRI2_scaled ~ mddrisk + bdrisk + psyrisk + age + sex + BMI + (1 | fid / Subject_ID / filename), data = merged, REML = FALSE)
-
-# Compare models with likelihood ratio tests
-anova(model0, model1, model2)
-
-summary(model2)
-
-```
-
-
-###SE
-```{r}
-# No effects
-model0 <- lmer(SE ~ 1 + (1 | fid / Subject_ID / filename), data = merged, REML = FALSE)
-
-# Add main predictors
-model1 <- lmer(SE ~ mddrisk + bdrisk + psyrisk + (1 | fid / Subject_ID / filename), data = merged, REML = FALSE)
-
-# Add demographics: age and sex
-model2 <- lmer(SE ~ mddrisk + bdrisk + psyrisk + age + sex + (1 | fid / Subject_ID / filename), data = merged, REML = FALSE)
-
-# Add BMI - WARNING: WE ARE MISSING PARTICIPANTS WITH BMI SCORES, IMPUTE?
-model3 <- lmer(SE ~ mddrisk + bdrisk + psyrisk + age + sex + BMI + (1 | fid / Subject_ID / filename), data = merged, REML = FALSE)
-
-# Compare models with likelihood ratio tests
-anova(model0, model1, model2)
-
-summary(model2)
-```
-###Midpoint
-```{r}
-merged <- merged %>%
-  mutate(
-    sleep_midpoint_min = period_to_seconds(hms(as.character(sleep_midpoint_time))) / 60
-  )
-###Midpoint
-model0 <- lmer(sleep_midpoint_min ~ 1 + (1 | Subject_ID / filename), data = merged, REML = FALSE)
-
-# Add main predictors
-model1 <- lmer(sleep_midpoint_min  ~ mddrisk + bdrisk + psyrisk + (1 | Subject_ID / filename), data = merged, REML = FALSE)
-
-# Add demographics: age and sex
-model2 <- lmer(sleep_midpoint_min ~ mddrisk + bdrisk + psyrisk + age + sex + (1 | Subject_ID / filename), data = merged, REML = FALSE)
-
-# Add BMI - WARNING: WE ARE MISSING PARTICIPANTS WITH BMI SCORES, IMPUTE?
-model3 <- lmer(sleep_midpoint_min  ~ mddrisk + bdrisk + psyrisk + age + sex + BMI + (1 | Subject_ID / filename), data = merged, REML = FALSE)
-
-# Compare models with likelihood ratio tests
-anova(model0, model1, model2)
-
-summary(model3)
-```
-
-
-##Hypothesis 2: Trajectories  
+##Hypothesis 1: Trajectories  
 ```{r}
 merged <- merged %>% filter(age >= 8 & age <= 22)
 merged <- merged %>% filter(group != 'Psy Risk')
@@ -886,32 +708,16 @@ table(merged$group)
 merged$weekend <- ifelse(merged$weekday %in% 
                          c("Sat", "Saturday", "Sun", "Sunday"), 1, 0)
 
-# Check result
-table(merged$weekend, merged$weekday)
+merged <- merged %>%
+  mutate(
+    sleep_midpoint_min = period_to_seconds(hms(as.character(sleep_midpoint_time))) / 60
+  )
 
+merged$subject_id <- as.factor(merged$subject_id)
 ```
 
 ###TST
 ```{r}
-library(mgcv)
-library(gratia)    # For difference_smooths() and draw()
-library(ggplot2)
-library(dplyr)
-library(gamm4)
-
-
-#Model Testing 
-merged$subject_id <- as.factor(merged$subject_id)
-
-#Just subject_id intercept and adding filename
-model1 <- lmer(SleepDurationInSpt ~ fhr + sex + ccMDD + age + (1|subject_id ), data = merged)
-model2 <- lmer(SleepDurationInSpt ~ fhr + sex + ccMDD + age + (1|subject_id / filename), data = merged)
-anova(model1, model2)
-
-#Adding fid to interept
-model3 <- lmer(SleepDurationInSpt ~ fhr + sex + ccMDD + age + (1| fid/subject_id / filename), data = merged)
-anova(model2, model3)
-
 vc <- as.data.frame(VarCorr(model3))
 var_fixed <- var(as.vector(fixef(model3) %*% t(model.matrix(model3)[, names(fixef(model3))])))
 var_random <- sum(vc$vcov[vc$grp != "Residual"])
@@ -980,10 +786,11 @@ pred <- predict(nonlinear$gam, newdata = newdat, se.fit = TRUE, exclude = "s(sub
 
 newdat$fit <- pred$fit
 newdat$se <- pred$se.fit
+z <- qnorm(0.975)  # 1.96
 newdat <- newdat %>%
   mutate(
-    lower = fit - 2 * se,
-    upper = fit + 2 * se
+    lower = fit - z * se,
+    upper = fit + z * se
   )
 
 # 6. Plot adjusted smooths for groups with ggplot
@@ -1002,7 +809,7 @@ scale_fill_manual(values = c("Control" = "#6699FF", "FHR" = "#FF6666")) +
        fill = "Group") +
   theme_minimal()
 ```
-####Illustae time in bed
+####Illustate time in bed
 ```{r}
 
 
@@ -1089,242 +896,101 @@ scale_fill_manual(values = c("Control" = "#6699FF", "FHR" = "#FF6666")) +
 
 ###SRI
 Ceiling effect, most of our participants have very high SRI.    
+
+Logit? Do a log based one maybe
 ```{r}
-#Model Testing 
-merged$subject_id <- as.factor(merged$subject_id)
-
-#Just subject_id intercept and adding filename
-model1 <- lmer(SRI2_scaled ~ fhr + sex + ccMDD + age + (1|subject_id ), data = merged)
-model2 <- lmer(SRI2_scaled ~ fhr + sex + ccMDD +  age + (1|subject_id / filename), data = merged)
-anova(model1, model2)
-
-#Adding fid to interept
-model3 <- lmer(SRI2_scaled ~ fhr*age + sex + ccMDD +  (1| fid /subject_id / filename), data = merged)
-anova(model2, model3)
-model4 <- lmer(SRI2_scaled ~ fhr *age + sex + ccMDD + weekend + (1| fid /subject_id / filename), data = merged2)
-anova(model4, model5)
-model5 <- lmer(SRI2_scaled ~ fhr *age + sex + ccMDD + weekend + BMI + (1| fid /subject_id / filename), data = merged2)
-
-
 #Comparing a linear to nonlinear model
 linear <- gamm4(sqrt(SRI2_scaled) ~ fhr*age + sex + weekend,
                    random = ~(1 | fid / subject_id / filename),
                    data = merged)
 
+merged$SRI2_binom <- merged$SRI2/100
+nonlinear_logit <- gamm4(
+  SRI2_binom ~ fhr + sex + weekend + s(age, by = fhr),
+  random = ~(1 | fid/subject_id/filename),
+  family = binomial(link = "logit"),
+  weights = rep(1440, nrow(merged)),
+  data = merged
+)
 
 
 
-nonlinear <- gamm4(SRI2_scaled ~ fhr + sex + weekend + s(age, by = fhr),
-                   random = ~(1 | fid/ subject_id / filename),
-                   data = merged)
-
-
-gam.check(nonlinear$gam)
-
-
-linear_ml <- linear$mer
-nonlinear_ml <- nonlinear$mer
-anova(linear_ml, nonlinear_ml)
-
-summary(linear$gam)
-summary(nonlinear$gam)
-
-
-
-
-
-
-library(gamm4)
-library(gratia)
-
-library(mgcv)
-merged$subject_id <- as.factor(merged$subject_id)
-
-
-
-diff <- difference_smooths(nonlinear$gam, smooth = "s(age)", by = "fhr",
-                           comp = list(fhr = c("FHR", "Control")))
-draw(diff)
+gam.check(nonlinear_logit$gam)
 
 
 
 age_seq <- seq(min(merged$age), max(merged$age), length.out = 200)
 
+# New data grid
 newdat <- expand.grid(
   age = age_seq,
   fhr = c("Control", "FHR"),
-  sex = "Female",        # same level as in your model
-  weekend = 0            # numeric
+  sex = "Female",   # keep same level as model
+  weekend = 0       # numeric
 )
 
-
+# Add a valid subject_id for random effect
 newdat$subject_id <- factor(merged$subject_id[1], levels = levels(merged$subject_id))
 
-pred <- predict(nonlinear$gam, newdata = newdat, se.fit = TRUE, exclude = "s(subject_id)")
+# Predictions on response scale (probabilities)
+pred <- predict(nonlinear_logit$gam, newdata = newdat, type = "response", se.fit = TRUE, exclude = "s(subject_id)")
 
-newdat$fit <- pred$fit
-newdat$se <- pred$se.fit
+# Add predicted values and CI
+z <- qnorm(0.975)  # ≈ 1.96
+
 newdat <- newdat %>%
   mutate(
-    lower = fit - 2 * se,
-    upper = fit + 2 * se
+    fit = pred$fit,
+    se = pred$se.fit,
+    lower = pmax(fit - z * se, 0),
+    upper = pmin(fit + z * se, 1)
   )
 
-# 6. Plot adjusted smooths for groups with ggplot
-
-ggplot(newdat, aes(x = age, y = fit, color = fhr)) +
+# Plot
+ggplot(newdat, aes(x = age, y = fit*100, color = fhr, fill = fhr)) +
   geom_line(size = 1.2) +
-  geom_ribbon(aes(ymin = lower, ymax = upper, fill = fhr), alpha = 0.2, color = NA) +
-  scale_y_continuous(limits = c(60,100), breaks = seq(60,100, by = 10)) +
-scale_color_manual(values = c("Control" = "#6699FF", "FHR" = "#FF6666")) +
-scale_fill_manual(values = c("Control" = "#6699FF", "FHR" = "#FF6666")) +
-
-  labs(title = "Adjusted Sleep Regularity Trajectories by Group",
-       x = "Age",
-       y = "Predicted Sleep Regularity",
-       color = "Group",
-       fill = "Group") +
+  geom_ribbon(aes(ymin = lower*100, ymax = upper*100), alpha = 0.2, color = NA) +
+  scale_y_continuous(limits = c(70, 100), breaks = seq(70, 100, by = 10)) +
+  scale_color_manual(values = c("Control" = "#6699FF", "FHR" = "#FF6666")) +
+  scale_fill_manual(values = c("Control" = "#6699FF", "FHR" = "#FF6666")) +
+  labs(
+    title = "Predicted Probability of Event by Age and Group",
+    x = "Age",
+    y = "Predicted SRI (%)",
+    color = "Group",
+    fill = "Group"
+  ) +
   theme_minimal()
+
 ```
 notes: Deciding age range, deciding metric for model comparisons, choose a criteria that you can defend. 
 
 Add in 3 groups: Controls w/o dep, FHR w/o dep, those with depression (look at this trajectory)
 - Is adding this as a covariate controlling or not since it has dif interactions at different ages. 
-- 
-
-
-###SE
-```{r}
-#Model Testing 
-merged$subject_id <- as.factor(merged$subject_id)
-
-#Just subject_id intercept and adding filename
-model1 <- lmer(SE ~ fhr + sex + ccMDD + age + (1|subject_id ), data = merged)
-model2 <- lmer(SE ~ fhr + sex + ccMDD +  age + (1|subject_id / filename), data = merged)
-anova(model1, model2)
-
-#Adding fid to interept
-model3 <- lmer(SE ~ fhr + sex + ccMDD + age + (1| fid /subject_id / filename), data = merged)
-anova(model2, model3)
-
-model3 <- lmer(SE ~ fhr*age +  sex + (1| fid/subject_id / filename), data = merged2)
-
-model4 <- lmer(SE ~ fhr*age +  sex + BMI_filled + (1| fid/subject_id / filename), data = merged2)
-anova(model3, model4)
-
-
-#Comparing a linear to nonlinear model
-linear <- gamm4(SE ~ fhr*age + BMI_filled + sex,
-                   random = ~(1 | fid / subject_id / filename),
-                   data = merged2)
-
-nonlinear <- gamm4(SE ~ s(age, by = fhr) + fhr + BMI_filled + sex ,
-                   random = ~(1 | fid/ subject_id / filename),
-                   data = merged2)
-
-
-
-linear_ml <- linear$mer
-nonlinear_ml <- nonlinear$mer
-anova(linear_ml, nonlinear_ml)
-
-summary(nonlinear$gam)
-summary(linear$gam)
-
-gam.check(nonlinear$gam)
-
-
-
-
-
-
-library(gamm4)
-library(gratia)
-
-library(mgcv)
-merged$subject_id <- as.factor(merged$subject_id)
-
-
-gam_model <- gam(SE ~ fhr + sex + ccMDD +
-                   s(age, by = fhr, k = 10) +
-                   s(subject_id, bs = "re"),
-                 data = merged, method = "REML")
-gam.check(gam_model)
-
-diff <- difference_smooths(nonlinear$gam, smooth = "s(age)", by = "fhr",
-                           comp = list(fhr = c("FHR", "Control")))
-draw(diff)
-
-
-
-age_seq <- seq(min(merged$age), max(merged$age), length.out = 200)
-bmi_seq <- seq(
-  from = min(merged$BMI_filled, na.rm = TRUE),
-  to   = max(merged$BMI_filled, na.rm = TRUE),
-  length.out = 200
-)
-
-
-# Create a new data frame with average covariate values
-newdat <- expand.grid(
-  age = age_seq,
-  BMI_filled = median(merged$BMI_filled, na.rm = TRUE),
-  fhr = factor(levels(merged$fhr), levels = levels(merged$fhr)),
-  sex = factor(levels(merged$sex)[1], levels = levels(merged$sex))
-)
-
-newdat$subject_id <- factor(merged$subject_id[1], levels = levels(merged$subject_id))
-
-pred <- predict(nonlinear$gam, newdata = newdat, se.fit = TRUE, exclude = "s(subject_id)")
-
-newdat$fit <- pred$fit
-newdat$se <- pred$se.fit
-newdat <- newdat %>%
-  mutate(
-    lower = fit - 2 * se,
-    upper = fit + 2 * se
-  )
-
-# 6. Plot adjusted smooths for groups with ggplot
-
-ggplot(newdat, aes(x = age, y = fit, color = fhr)) +
-  geom_line(size = 1.2) +
-  geom_ribbon(aes(ymin = lower, ymax = upper, fill = fhr), alpha = 0.2, color = NA) +
-  scale_y_continuous(limits = c(60,100), breaks = seq(60,100, by = 20)) +
-scale_color_manual(values = c("Control" = "#6699FF", "FHR" = "#FF6666")) +
-scale_fill_manual(values = c("Control" = "#6699FF", "FHR" = "#FF6666")) +
-
-  labs(title = "Adjusted Sleep Efficiency Trajectories by Group",
-       x = "Age",
-       y = "Predicted Sleep Efficiency",
-       color = "Group",
-       fill = "Group") +
-  theme_minimal()
-```
+-
 
 ###Midpoint
 ```{r}
 merged2 <- merged %>%
   filter(!is.na(BMI_filled))
 
-model3 <- lmer(SleepDurationInSpt ~ fhr*age +  sex + (1| fid/subject_id / filename), data = merged2)
 
-model4 <- lmer(SleepDurationInSpt ~ fhr*age +  sex + BMI_filled + (1| fid/subject_id / filename), data = merged2)
+
+model3 <- lmer(sleep_midpoint_min ~ fhr*age +  sex + (1| fid/subject_id / filename), data = merged)
+
+model4 <- lmer(sleep_midpoint_min ~ fhr*age +  sex + weekend + (1| fid/subject_id / filename), data = merged)
 anova(model3, model4)
 
-linear <- gamm4(sleep_midpoint_min ~ fhr*age + sex,
+linear <- gamm4(sleep_midpoint_min ~ fhr*age + sex + weekend,
                    random = ~(1 | fid / subject_id / filename),
                    data = merged)
 
-nonlinear <- gamm4(sleep_midpoint_min ~ fhr + sex + s(age, by = fhr),
+nonlinear <- gamm4(sleep_midpoint_min ~ fhr + sex + weekend + s(age, by = fhr),
                    random = ~(1 | fid/ subject_id / filename),
                    data = merged)
 
+anova(linear$mer, nonlinear$mer)
 
-
-linear_ml <- linear$mer
-nonlinear_ml <- nonlinear$mer
-anova(linear_ml, nonlinear_ml)
 
 summary(linear$gam)
 summary(nonlinear$gam)
@@ -1347,7 +1013,8 @@ age_seq <- seq(min(merged$age), max(merged$age), length.out = 200)
 newdat <- expand.grid(
   age = age_seq,
   fhr = factor(levels(merged$fhr), levels = levels(merged$fhr)),
-  sex = factor(levels(merged$sex)[1], levels = levels(merged$sex))
+  sex = factor(levels(merged$sex)[1], levels = levels(merged$sex)),
+  weekend = 0
 )
 
 newdat$subject_id <- factor(merged$subject_id[1], levels = levels(merged$subject_id))
@@ -1356,10 +1023,11 @@ pred <- predict(nonlinear$gam, newdata = newdat, se.fit = TRUE, exclude = "s(sub
 
 newdat$fit <- pred$fit
 newdat$se <- pred$se.fit
+z <- qnorm(0.975)  # 1.96
 newdat <- newdat %>%
   mutate(
-    lower = fit - 2 * se,
-    upper = fit + 2 * se
+    lower = fit - z * se,
+    upper = fit + z * se
   )
 
 # 6. Plot adjusted smooths for groups with ggplot
@@ -1384,8 +1052,8 @@ ggplot(newdat, aes(x = age, y = fit/60, color = fhr)) +   # convert to hours
 
 #CSV
 ```{r}
-# Load into a temporary environment to avoid corrupting your global one
 setwd("C:/Users/hubshmz/Documents/Code/git/data")  # FORBOW computer
+
 temp_env <- new.env()
 load("analytic-zach.RData", envir = temp_env)
 
@@ -1410,10 +1078,3 @@ for (obj_name in all_objs) {
 }
 
 ```
-
-
-##TST
-```{r}
-model1 <- lmer(SleepDurationInSpt ~ age + sex + bmi + groupmdd + grouppsy + groupbp + (1|subject_id) + (1|filename) + (1|subject_id), data = merged)
-```
-
