@@ -1,0 +1,626 @@
+---
+title: "Trajectories"
+author: "Zachary"
+date: '2025-07-28'
+output: html_document
+---
+
+# Library & Notes
+```{r setup, include=FALSE}
+## ─────────────────────────────
+## 📦 Data Import & Manipulation
+## ─────────────────────────────
+library(haven)       # Read SPSS, SAS, Stata files
+library(readr)       # Read CSVs
+library(readxl)      # Read Excel files
+library(data.table)  # Fast data manipulation
+library(dplyr)       # Data manipulation
+library(tidyr)       # Data tidying
+library(stringr)     # String operations
+library(purrr)       # Functional programming
+library(zoo)         # Time series & rolling functions
+library(lubridate)   # Dates & times
+library(fuzzyjoin)   # Fuzzy matching joins
+
+## ─────────────────────────────
+## 📊 Modeling & Statistics
+## ─────────────────────────────
+library(lme4)        # Mixed-effects models
+library(lmerTest)    # p-values for lmer
+library(coxme)       # Cox mixed-effects models
+library(survival)    # Survival analysis
+library(MuMIn)       # Model selection & R²
+library(lsmeans)     # Least-squares means (now emmeans)
+library(mgcv)        # Generalized Additive Models
+library(gratia)      # GAM diagnostics & visualization
+library(gamm4)       # GAMM fitting
+
+## ─────────────────────────────
+## 📑 Tables & Reporting
+## ─────────────────────────────
+library(broom)       # Tidy model output
+library(pander)      # Pretty markdown tables
+library(apaTables)   # APA-style tables
+library(flextable)   # Formatted tables
+library(officer)     # Export to Word/PowerPoint
+library(webshot2)    # Save HTML tables/images
+
+## ─────────────────────────────
+## 🎨 Plotting & Visualization
+## ─────────────────────────────
+library(ggplot2)     # General plotting
+```
+
+#Non-Mean Exploration
+```{r}
+# setwd("C:/Users/hubshmz/Documents/Code/git/data")  # FORBOW computer
+setwd("C:/Users/zachh/Documents/Code/git/Data")  # Laptop
+# setwd("C:/Users/zacha/Documents/RStudio/forbow/git/Data") # Tupper Windows Comp
+# setwd("C:/Users/zacha/Documents/forbow/code/git") # Home Computer
+
+FOR <- readr::read_csv("FOR.csv", col_types = cols(.default = col_character()))
+Night <- readr::read_csv("part4_nightsummary_sleep_cleaned.csv", col_types = cols(.default = col_character()))
+NightM <- read_excel("motionloggerdata.xlsx")
+
+FOR <- FOR %>%
+  mutate(
+    oheightinch  = as.numeric(as.character(oheightinch)),
+    oweightlb  = as.numeric(as.character(oweightlb)),
+    oheightcm  = as.numeric(as.character(oheightcm)),
+    oweightkg  = as.numeric(as.character(oweightkg))
+  )
+
+
+FOR <- FOR %>%
+  mutate(oheightcm = ifelse(is.na(oheightcm), oheightinch * 2.54, oheightcm))
+FOR <- FOR %>%
+  mutate(oweightkg = ifelse(is.na(oweightkg), oweightlb * 0.453592, oweightkg))
+FOR <- FOR %>%
+  mutate(
+    BMI = round(oweightkg / ((oheightcm / 100)^2), 1)
+  )
+
+FOR <- FOR %>%
+    # Sort by subject and year
+  group_by(subject_id) %>%
+  arrange(time_point) %>%
+  mutate(
+    BMI_filled = BMI,  # create new BMI_filled variable
+    
+    BMI_filled = if_else(
+      is.na(BMI_filled),
+      rollapplyr(BMI_filled, width = 5, FUN = function(x) {
+        median(x[!is.na(x)], na.rm = TRUE)
+      }, partial = TRUE, fill = NA),
+      BMI_filled
+    )
+  ) %>%
+  ungroup()
+summary(FOR$BMI_filled)
+summary(FOR$BMI)
+
+
+
+Night$Subject_ID <- substr(Night$filename, 1, 12)
+Night$Assessment_Date <- str_extract(Night$filename, "\\d{4}-\\d{2}-\\d{2}")
+Night <- Night %>% 
+  filter(!str_detect(filename, "F[1-3]|f[1-3]|M[1-3]|m[1-3]|\\$R"))
+
+
+bin_files_to_remove <- c(
+  "8000103174_left wrist_068158_2025-06-03 10-40-36.bin",
+  "8000156273_left wrist_060381_2024-11-05 12-04-08_partial.bin",
+  "8000156273_left wrist_060381_2024-11-05 12-27-40.bin",
+  "800304581_right wrist_060843_2024-11-05 13-16-09.bin",
+  "800304582__060365_2024-11-05 12-03-44.bin",
+  "800304582__060365_2024-11-05 12-28-01.bin"
+)
+
+Night <- Night %>%
+  filter(!filename %in% bin_files_to_remove)
+Night <- Night %>%
+  mutate(Subject_ID = gsub("^800-(\\d{3})-(\\d+)_$", "800-0\\1-\\2", Subject_ID))
+
+Night$Subject_ID <- gsub("-", "", Night$Subject_ID)
+Night$Subject_ID <- gsub("[a-zA-Z]", "", Night$Subject_ID)
+Night$Subject_ID <- gsub("_", "", Night$Subject_ID)
+FOR$Subject_ID <- gsub("-", "", as.character(FOR$subject_id))
+
+setDT(Night)
+setDT(FOR)
+
+Night$geneactiv <- 1
+FOR[, Assessment_Date := as.Date(assessment_date)]
+FOR$Assessment_Date_FOR <- FOR$Assessment_Date
+Night[, Assessment_Date := as.Date(Assessment_Date)]  # redundant if already Date
+Night$Assessment_Date_Night <- Night$Assessment_Date
+
+# Perform the join with date window logic
+merged1 <- Night[FOR, on = .(Subject_ID), allow.cartesian = TRUE]
+
+merged1[, diffdays := abs(as.numeric(difftime(Assessment_Date_Night, Assessment_Date_FOR, units = "days")))]
+
+merged1 <- merged1 %>% filter(diffdays <= 179)
+
+two <- merged1[(Subject_ID %in% c(8000038204, 8000114479))]
+
+
+NightM <- NightM %>%
+  mutate(filename = paste0(ID, "motionlogg"))
+
+NightM$weekday <- NightM$eday
+NightM <- NightM %>% 
+  filter(!str_detect(Subject_ID, "F[1-3]|f[1-3]|M[1-3]|m[1-3]|\\$R"))
+setDT(NightM)
+NightM[, Assessment_Date := as.Date(sdate)]
+NightM$Assessment_date_nightM <- NightM$Assessment_Date
+
+
+merged2 <- NightM[FOR, on = .(Subject_ID), allow.cartesian = TRUE]
+
+
+merged2[, diffdays := abs(as.numeric(difftime(Assessment_date_nightM, Assessment_Date_FOR, units = "days")))]
+merged2 <- merged2 %>% filter(diffdays <= 179)
+merged2$motionlogger <- 1
+
+
+
+merged <- rbindlist(list(merged1, merged2), fill = TRUE)
+```
+
+#Data Setup
+```{r}
+merged <- merged %>%
+  mutate(fhr = ifelse(group %in% c(1, 2, 3), 1, 0))
+
+merged$age <- as.numeric(as.character(merged$age))
+
+
+merged$fhr <- factor(merged$fhr,
+                       levels = c(0, 1),
+                       labels = c("Control", "FHR"))
+merged$group <- factor(merged$group,
+                       levels = c(0, 1, 2, 3),
+                       labels = c("Control", "MDD Risk", "BD Risk", "Psy Risk"))
+merged$sex <- factor(merged$sex,
+                       levels = c(0, 1),
+                       labels = c("Male", "Female"))
+merged <- merged %>% 
+  filter(!is.na(group))
+
+
+merged <- merged %>%
+  filter(group != 3)
+
+unique_data <- unique(merged[, c("subject_id", "group")])
+
+group_table <- table(unique_data$group)
+pander(group_table)
+
+
+unique_data <- unique(merged1[, c("subject_id", "group")])
+
+group_table <- table(unique_data$group)
+pander(group_table)
+
+unique_data <- unique(merged2[, c("subject_id", "group")])
+
+group_table <- table(unique_data$group)
+pander(group_table)
+
+pander(table(merged$group))
+
+merged <- merged %>%
+  mutate(fhr_num = ifelse(fhr == "FHR", 1, 0))
+
+sum <- merged %>%
+  group_by(filename) %>%
+  summarise(TSTm = mean((SleepDurationInSpt), na.rm=TRUE),
+            age = mean((age), na.rm=TRUE),
+            fhr = median((fhr_num), na.rm=TRUE))
+
+sum$fhr <- factor(sum$fhr,
+                       levels = c(0, 1),
+                       labels = c("Control", "FHR"))
+```
+#Non-Mean Graphing
+##Density plot
+```{r}
+library(ggplot2)
+library(patchwork)
+
+
+# Plot 3: TST mean
+p3 <- ggplot(sum, aes(x = TSTm)) +
+  geom_density(fill = "darkorange", alpha = 0.5, color = "black") +
+  scale_x_continuous(limits = c(4, 12), breaks = seq(4, 12, 2)) +
+  labs(title = "Total Sleep Time Mean", x = "Hours", y = "Density") +
+  theme_minimal()
+
+p3
+```
+
+##Total Sleep time
+Time Spent Inactive During Sleep Window
+
+```{r}
+merged$SleepDurationInSpt <- as.numeric(merged$SleepDurationInSpt)
+
+
+b_f_WE <- ggplot(data = merged, mapping = aes(x = age, y = SleepDurationInSpt, color = fhr)) +
+  geom_jitter(alpha = 0.1, width = 0.2, height = 0.5, size = 1.2) +
+  geom_smooth(
+    method = "gam",
+    se = FALSE,
+    linetype = "solid",
+    size = 2,  # thicker
+    aes(group = fhr, color = fhr)  # reassert color by group for clarity
+  ) +
+  scale_color_brewer(palette = "Dark2") + 
+  scale_y_continuous(
+    limits = c(4, 12),
+    breaks = seq(4, 12, by = 2)
+  ) +
+  labs(
+    title = "Sleep Duration Across Age by Group All Days (Faceted)",
+    x = "Age",
+    y = "Sleep Duration (Hours)",
+    color = "Group"
+  )  +
+  theme_minimal()
+b_f_WE 
+
+ggplot(merged, aes(x = age, color = fhr, fill = fhr)) +
+  geom_density(alpha = 0.4) +
+  scale_color_brewer(palette = "Dark2") +
+  scale_fill_brewer(palette = "Dark2") +
+  labs(
+    title = "Age Density by Group",
+    x = "Age",
+    y = "Density",
+    color = "Group",
+    fill = "Group"
+  ) +
+  theme_minimal() + facet_wrap(~ fhr)
+
+merged$day_type <- ifelse(merged$weekday %in% c("Saturday", "Sunday", "Sat", "Sun"), "Weekend", "Weekday")
+merged$day_type <- factor(merged$day_type, levels = c("Weekday", "Weekend"))
+
+b_f_WE <- ggplot(data = merged, mapping = aes(x = age, y = SleepDurationInSpt, color = fhr)) +
+  geom_jitter(alpha = 0.1, width = 0.2, height = 0.5, size = 1.2) +
+  geom_smooth(
+    method = "gam",
+    se = FALSE,
+    linetype = "solid",
+    size = 2,
+    aes(group = fhr, color = fhr)
+  ) +
+  scale_color_brewer(palette = "Dark2") + 
+  scale_y_continuous(
+    limits = c(4, 12),
+    breaks = seq(4, 12, by = 2)
+  ) +
+  labs(
+    title = "Sleep Duration Across Age by Group and Day Type",
+    x = "Age",
+    y = "Sleep Duration (Hours)",
+    color = "Group"
+  )  +
+  facet_grid(day_type ~ fhr) +   # rows = day type, columns = group
+  theme_minimal()
+b_f_WE
+
+
+b_f_WE <- ggplot(data = sum, mapping = aes(x = age, y = TSTm, color = fhr)) +
+  geom_jitter(alpha = 0.1, width = 0.2, height = 0.5, size = 1.2) +
+  geom_smooth(
+    method = "gam",
+    se = FALSE,
+    linetype = "solid",
+    size = 2,  # thicker
+    aes(group = fhr, color = fhr)  # reassert color by group for clarity
+  ) +
+  scale_color_brewer(palette = "Dark2") + 
+  scale_y_continuous(
+    limits = c(4, 12),
+    breaks = seq(4, 12, by = 2)
+  ) +
+  labs(
+    title = "Sleep Duration Across Age by Group All Days (Faceted)",
+    x = "Age",
+    y = "Sleep Duration (Hours)",
+    color = "Group"
+  )  +
+  theme_minimal()
+b_f_WE
+```
+
+#Main Analysis
+##Hypothesis 1: Trajectories  
+```{r}
+merged <- merged %>% filter(age >= 8 & age <= 22)
+merged <- merged %>% filter(group != 'Psy Risk')
+
+table(merged$group)
+
+# Create weekend variable: 1 for Saturday/Sunday, 0 otherwise
+merged$weekend <- ifelse(merged$weekday %in% 
+                         c("Sat", "Saturday", "Sun", "Sunday"), 1, 0)
+
+
+merged$subject_id <- as.factor(merged$subject_id)
+```
+
+###TST
+```{r}
+#Comparing a linear to nonlinear model
+
+
+merged2 <- merged[!is.na(merged$BMI_filled), ]
+linear <- gamm4(SleepDurationInSpt ~ fhr*age + sex,
+                   random = ~(1 | fid / subject_id / filename),
+                   data = merged)
+
+nonlinear <- gamm4(SleepDurationInSpt ~ fhr + sex + s(age, by = fhr, k = 5),
+                   random = ~(1 | fid/ subject_id / filename),
+                   data = merged)
+summary(nonlinear$gam)
+
+#Extract merMod objects
+linear_ml <- linear$mer
+nonlinear_ml <- nonlinear$mer
+anova(linear_ml, nonlinear_ml)
+
+
+
+gam.check(nonlinear$gam)
+
+summary(nonlinear$gam)
+```
+
+####Graph
+```{r}
+# 3. Calculate difference smooth between groups
+diff <- difference_smooths(nonlinear$gam,
+                           select = "s(age)",
+                           by = "fhr",
+                           comp = list(fhr = c("FHR", "Control")))
+
+
+# 4. Plot difference smooth (shows where groups differ)
+draw(diff)
+
+
+# 5. Create predicted trajectories by group for ggplot
+
+# Create new data for prediction (age sequence)
+age_seq <- seq(min(merged$age), max(merged$age), length.out = 200)
+
+# Create a new data frame with average covariate values
+newdat <- expand.grid(
+  age = age_seq,
+  fhr = factor(levels(merged$fhr), levels = levels(merged$fhr)),
+  sex = factor(levels(merged$sex)[1], levels = levels(merged$sex))  # character matching merged$ccMDD values
+)
+
+newdat$subject_id <- factor(merged$subject_id[1], levels = levels(merged$subject_id))
+
+pred <- predict(nonlinear$gam, newdata = newdat, se.fit = TRUE, exclude = "s(subject_id)")
+
+newdat$fit <- pred$fit
+newdat$se <- pred$se.fit
+z <- qnorm(0.975)  # 1.96
+newdat <- newdat %>%
+  mutate(
+    lower = fit - z * se,
+    upper = fit + z * se
+  )
+
+# 6. Plot adjusted smooths for groups with ggplot
+
+ggplot(newdat, aes(x = age, y = fit, color = fhr)) +
+  geom_line(size = 1.2) +
+  geom_ribbon(aes(ymin = lower, ymax = upper, fill = fhr), alpha = 0.2, color = NA) +
+  scale_y_continuous(limits = c(4, 10), breaks = seq(4, 10, by = 2)) +
+scale_color_manual(values = c("Control" = "#6699FF", "FHR" = "#FF6666")) +
+scale_fill_manual(values = c("Control" = "#6699FF", "FHR" = "#FF6666")) +
+
+  labs(title = "Adjusted Sleep Duration Trajectories by Group",
+       x = "Age",
+       y = "Predicted Sleep Duration (hours)",
+       color = "Group",
+       fill = "Group") +
+  theme_minimal()
+```
+####Illustate time in bed
+```{r}
+library(lubridate)
+
+# Convert to seconds since midnight
+merged <- merged %>%
+  mutate(
+    # Parse "HH:MM:SS" as times on an arbitrary date
+    sleeponset_time = as.POSIXct(sleeponset_ts, format = "%H:%M:%S", tz = "UTC"),
+    wakeup_time     = as.POSIXct(wakeup_ts, format = "%H:%M:%S", tz = "UTC"),
+
+    # Convert to seconds since midnight
+    onset_sec = hour(sleeponset_time) * 3600 +
+                minute(sleeponset_time) * 60 +
+                second(sleeponset_time),
+
+    wakeup_sec = hour(wakeup_time) * 3600 +
+                 minute(wakeup_time) * 60 +
+                 second(wakeup_time)
+  )
+
+summary(merged$wakeup_sec)
+summary(merged$onset_sec)
+# Duration in hours, wrap around midnight automatically
+merged[, SptDuration_hours := ((wakeup_sec - onset_sec) %% (24*3600)) / 3600]
+
+
+summary(merged$SptDuration_hours)
+merged$sleepwindow <- as.numeric(merged$guider_SptDuration)
+nonlinear <- gamm4(SptDuration_hours ~ fhr + sex + ccMDD + s(age, by = fhr),
+                   random = ~(1 | fid/ subject_id / filename),
+                   data = merged)
+
+#Extract merMod objects
+nonlinear_ml <- nonlinear$mer
+
+gam.check(nonlinear$gam)
+
+
+# 3. Calculate difference smooth between groups
+diff <- difference_smooths(nonlinear$gam,
+                           select = "s(age)",
+                           by = "fhr",
+                           comp = list(fhr = c("FHR", "Control")))
+
+
+# 4. Plot difference smooth (shows where groups differ)
+draw(diff)
+
+
+# 5. Create predicted trajectories by group for ggplot
+
+# Create new data for prediction (age sequence)
+age_seq <- seq(min(merged$age), max(merged$age), length.out = 200)
+
+# Create a new data frame with average covariate values
+newdat <- expand.grid(
+  age = age_seq,
+  fhr = factor(levels(merged$fhr), levels = levels(merged$fhr)),
+  sex = factor(levels(merged$sex)[1], levels = levels(merged$sex)),
+  ccMDD = "0"  # character matching merged$ccMDD values
+)
+
+newdat$subject_id <- factor(merged$subject_id[1], levels = levels(merged$subject_id))
+
+pred <- predict(nonlinear$gam, newdata = newdat, se.fit = TRUE, exclude = "s(subject_id)")
+
+newdat$fit <- pred$fit
+newdat$se <- pred$se.fit
+newdat <- newdat %>%
+  mutate(
+    lower = fit - 2 * se,
+    upper = fit + 2 * se
+  )
+
+# 6. Plot adjusted smooths for groups with ggplot
+
+ggplot(newdat, aes(x = age, y = fit, color = fhr)) +
+  geom_line(size = 1.2) +
+  geom_ribbon(aes(ymin = lower, ymax = upper, fill = fhr), alpha = 0.2, color = NA) +
+  scale_y_continuous(limits = c(2, 12), breaks = seq(2, 12, by = 2)) +
+scale_color_manual(values = c("Control" = "#6699FF", "FHR" = "#FF6666")) +
+scale_fill_manual(values = c("Control" = "#6699FF", "FHR" = "#FF6666")) +
+
+  labs(title = "Adjusted Sleep Duration Trajectories by Group",
+       x = "Age",
+       y = "Predicted Sleep Duration (hours)",
+       color = "Group",
+       fill = "Group") +
+  theme_minimal()
+
+```
+
+
+
+
+
+###Subtest Mean SRI
+```{r}
+get_mode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+sum_filename <- merged %>%
+  group_by(subject_id, filename) %>%
+  summarize(
+    mean_TST = mean(SleepDurationInSpt, na.rm = TRUE),
+    mean_age = mean(age, na.rm = TRUE),
+    mode_sex = get_mode(sex),  # correct mode function
+    mode_fhr = get_mode(fhr),  # correct mode function
+    fid = get_mode(fid),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    mode_sex = factor(mode_sex),
+    mode_fhr = factor(mode_fhr),
+    fid = factor(fid)
+  )
+
+
+nonlinear <- gamm4(mean_TST ~ mode_fhr + mode_sex + s(mean_age, by = mode_fhr, k = 5),
+                   random = ~(1 | fid/ subject_id),
+                   data = sum_filename)
+
+
+diff <- difference_smooths(
+  nonlinear$gam,
+  select = "s(mean_age)",
+  by = "mode_fhr",
+  comp = list(mode_fhr = c("FHR", "Control")),
+  partial_match = TRUE
+)
+
+
+
+gam.check(nonlinear$gam)
+
+draw(nonlinear$gam)
+
+
+age_seq <- seq(min(merged$age), max(merged$age), length.out = 200)
+
+# New data grid
+newdat <- expand.grid(
+  mean_age = age_seq,
+  mode_fhr = c("Control", "FHR"),
+  mode_sex = "Female",   # keep same level as model
+  weekend = 0       # numeric
+)
+
+# Add a valid subject_id for random effect
+newdat$subject_id <- factor(merged$subject_id[1], levels = levels(merged$subject_id))
+
+# Predictions on response scale (probabilities)
+pred <- predict(
+  nonlinear$gam,
+  newdata = newdat,
+  type = "response",
+  se.fit = TRUE,
+  exclude = c("s(fid)", "s(subject_id)")
+)
+
+z <- qnorm(0.975)
+
+newdat <- newdat %>%
+  mutate(
+    fit = pred$fit,
+    se = pred$se.fit,
+    lower = fit - z * se,
+    upper = fit + z * se
+  )
+
+# plot
+ggplot(newdat, aes(x = mean_age, y = fit, color = mode_fhr, fill = mode_fhr)) +
+  geom_line(size = 1.2) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2, color = NA) +
+  scale_color_manual(values = c("Control" = "#6699FF", "FHR" = "#FF6666")) +
+  scale_fill_manual(values = c("Control" = "#6699FF", "FHR" = "#FF6666")) +
+  scale_y_continuous(limits = c(4, 10), breaks = seq(4, 10, by = 2)) +
+  labs(
+    title = "Predicted TST (Mean) by Age and Group",
+    x = "Age",
+    y = "Predicted TST (hours)",
+    color = "Group",
+    fill = "Group"
+  ) +
+  theme_minimal()
+
+```
+
+

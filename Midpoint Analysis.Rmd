@@ -134,39 +134,8 @@ merged <- rbindlist(list(merged1, merged2), fill = TRUE)
 
 #Midpoint
 ```{r message=FALSE, warning=FALSE}
-
-#number 1
 merged$sleeponset <- as.numeric(merged$sleeponset)
 merged$wakeup <- as.numeric(merged$wakeup)
-
-base_date <- as.Date("2000-01-01")
-merged$sleeponset_time <- as.POSIXct(base_date) + merged$sleeponset * 3600
-merged$wakeup_time     <- as.POSIXct(base_date) + merged$wakeup * 3600
-merged$time_onset <- format(merged$sleeponset_time, format = "%H:%M:%S")
-
-merged$time_wake <- format(merged$wakeup_time, format = "%H:%M:%S")
-
-subject_ids <- unique(merged$subject_id)
-merged$SRI2 <- NA_real_
-merged$night <- as.numeric(merged$night)
-
-
-
-merged$sleeponset_time <- as.POSIXct(base_date) + merged$sleeponset * 3600
-merged$wakeup_time     <- as.POSIXct(base_date) + merged$wakeup * 3600
-merged <- merged %>%
-  mutate(
-    sleeponset = as.numeric(sleeponset),
-    SptDuration = as.numeric(SptDuration),
-    midpoint = (sleeponset + (SptDuration / 2)) %% 1440
-  )
-
-
-
-merged$sleeponset <- as.numeric(merged$sleeponset)
-merged$wakeup <- as.numeric(merged$wakeup)
-
-##number2
 
 base_date <- as.Date("2000-01-01")
 merged$sleeponset_time <- as.POSIXct(base_date) + merged$sleeponset * 3600
@@ -231,44 +200,10 @@ pander(table(merged$group))
 
 merged <- merged %>%
   mutate(fhr_num = ifelse(fhr == "FHR", 1, 0))
-
-sum <- merged %>%
-  group_by(filename) %>%
-  summarise(midpointm = mean((midpoint), na.rm=TRUE),
-            age = mean((age), na.rm=TRUE),
-            fhr = median((fhr_num), na.rm=TRUE))
-
-sum$fhr <- factor(sum$fhr,
-                       levels = c(0, 1),
-                       labels = c("Control", "FHR"))
 ```
 
 
 
-
-#Non-Mean Graphing
-##Density plot
-```{r}
-# Plot 4: Sleep Midpoint mean (convert to hours if POSIXct)
-if (inherits(sum$SleepMidm, "POSIXt")) {
-  sum$SleepMidm_hours <- as.numeric(format(sum$SleepMidm, "%H")) +
-                         as.numeric(format(sum$SleepMidm, "%M")) / 60
-} else {
-  sum$SleepMidm_hours <- sum$SleepMidm
-}
-
-p4 <- ggplot(sum, aes(x = SleepMidm - 24)) +
-  geom_density(fill = "purple", alpha = 0.5, color = "black") +
-  scale_x_continuous(limits = c(0, 8), breaks = seq(0, 8, 2)) +
-  labs(title = "Sleep Midpoint Mean", x = "Time of Day (hrs)", y = "Density") +
-  theme_minimal()
-
-
-
-# Combine into 2x2 layout
-p4
-
-```
 
 ##Sleep Midpoint
 ```{r}
@@ -277,25 +212,26 @@ summary(merged$wakeup)
 summary(merged$midpoint)
 
 merged$sleeponsetadj <- merged$sleeponset 
-merged$midpointadj1 <- merged$midpoint
-merged$midpointadj2 <- (merged$sleep_midpoint_min/60) + 24
+merged$midpointadj <- (merged$sleep_midpoint_min/60) + 24
 merged$wakeupadj <- merged$wakeup
 
-summary(merged$midpoint)
-summary(merged$sleep_midpoint_min)
+y_breaks <- seq(24, 32, by = 1)
 
-merged$sleep_mid2_adj <- (merged$sleep_midpoint_min/60) + 12
-summary(merged$sleep_mid2)
+# Create labels that wrap hours past 24 back to 0-8, keeping the "24:" style
+y_labels <- sapply(y_breaks, function(h) {
+  hr <- h %% 24
+  sprintf("%02d:00", hr)
+})
 
-
-ggplot(merged, aes(x = age, y = sleep_mid2_adj, color = fhr)) +
+ggplot(merged, aes(x = age, y = midpointadj, color = fhr)) +
   geom_point(alpha = 0.1) +
   geom_smooth(se = FALSE) +
-  #scale_color_manual(values = my_colors, name = "Group & Measure") +
   scale_y_continuous(
-    labels = function(x) sprintf("%02d:%02d", floor(x), round((x %% 1) * 60)),
-    breaks = seq(0, 36, by = 4)
+    breaks = y_breaks,
+    labels = y_labels,
+    limits = c(24, 32)
   ) +
+  coord_cartesian(xlim = c(8, 22)) +  # limits x-axis without dropping points
   labs(
     x = "Age",
     y = "Sleep time (HH:MM)"
@@ -305,7 +241,7 @@ ggplot(merged, aes(x = age, y = sleep_mid2_adj, color = fhr)) +
 
 longdat <- merged %>%
   pivot_longer(
-    cols = c(sleeponsetadj, midpointadj1, midpointadj2, wakeupadj),
+    cols = c(sleeponsetadj, midpointadj, wakeupadj),
     names_to = "sleep_measure",
     values_to = "minutes"
   )
@@ -313,17 +249,6 @@ longdat <- merged %>%
 # Plot
 # Create combined variable
 longdat$group <- interaction(longdat$fhr, longdat$sleep_measure)
-
-my_colors <- c(
-  "Control.sleeponsetadj" = "#4C72B0",
-  "Control.midpointadj"   = "#55A868",
-  "Control.wakeupadj"     = "#8172B2",
-  
-  # FHR reds - same hue, different lightness
-  "FHR.sleeponsetadj" = "#B22222",  # firebrick
-  "FHR.midpointadj"   = "#D33F49",  # classic red
-  "FHR.wakeupadj"     = "#E57373"   # soft rose
-)
 
 ggplot(longdat, aes(x = age, y = minutes, color = group)) +
   geom_point(alpha = 0.1) +
@@ -357,7 +282,7 @@ ggplot(longdat, aes(x = age, y = minutes, color = sleep_measure)) +
 
 sum <- merged %>%
   group_by(filename) %>%
-  summarise(midpointadj = mean((sleep_mid2_adj), na.rm=TRUE),
+  summarise(midpointadj = mean((midpointadj), na.rm=TRUE),
             sleeponsetadj = mean((sleeponsetadj), na.rm=TRUE),
             wakeupadj = mean((wakeupadj), na.rm=TRUE),
             age = mean((age), na.rm=TRUE),
@@ -418,10 +343,6 @@ table(merged$fhr)
 linear <- gamm4(sleep_midpoint_min ~ fhr*age + sex + weekend,
                    random = ~(1 | fid / subject_id / filename),
                    data = merged)
-
-merged$sleep_midpoint_min <- merged$midpoint - 24
-summary(merged$sleep_midpoint_min)
-
 
 nonlinear <- gamm4(sleep_midpoint_min ~ fhr + sex + weekend + s(age, by = fhr),
                    random = ~(1 | fid/ subject_id / filename),
