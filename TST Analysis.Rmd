@@ -529,7 +529,7 @@ scale_fill_manual(values = c("Control" = "#6699FF", "FHR" = "#FF6666")) +
 
 
 
-###Subtest Mean SRI
+###Subtest Mean TST
 ```{r}
 get_mode <- function(x) {
   ux <- unique(x)

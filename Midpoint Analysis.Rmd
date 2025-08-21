@@ -411,3 +411,99 @@ ggplot(newdat, aes(x = age, y = fit/60, color = fhr)) +   # convert to hours
 ```
 
 
+###Subtest Mean Midpoint
+```{r}
+get_mode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+sum_filename <- merged %>%
+  group_by(subject_id, filename) %>%
+  summarize(
+    mean_MP = mean(sleep_midpoint_min, na.rm = TRUE),
+    mean_age = mean(age, na.rm = TRUE),
+    mode_sex = get_mode(sex),  # correct mode function
+    mode_fhr = get_mode(fhr),  # correct mode function
+    fid = get_mode(fid),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    mode_sex = factor(mode_sex),
+    mode_fhr = factor(mode_fhr),
+    fid = factor(fid)
+  )
+
+
+nonlinear <- gamm4(mean_MP ~ mode_fhr + mode_sex + s(mean_age, by = mode_fhr, k = 5),
+                   random = ~(1 | fid/ subject_id),
+                   data = sum_filename)
+
+
+diff <- difference_smooths(
+  nonlinear$gam,
+  select = "s(mean_age)",
+  by = "mode_fhr",
+  comp = list(mode_fhr = c("FHR", "Control")),
+  partial_match = TRUE
+)
+
+
+
+gam.check(nonlinear$gam)
+
+draw(nonlinear$gam)
+
+
+age_seq <- seq(min(merged$age), max(merged$age), length.out = 200)
+
+# New data grid
+newdat <- expand.grid(
+  mean_age = age_seq,
+  mode_fhr = c("Control", "FHR"),
+  mode_sex = "Female",   # keep same level as model
+  weekend = 0       # numeric
+)
+
+# Add a valid subject_id for random effect
+newdat$subject_id <- factor(merged$subject_id[1], levels = levels(merged$subject_id))
+
+# Predictions on response scale (probabilities)
+pred <- predict(
+  nonlinear$gam,
+  newdata = newdat,
+  type = "response",
+  se.fit = TRUE,
+  exclude = c("s(fid)", "s(subject_id)")
+)
+
+z <- qnorm(0.975)
+
+newdat <- newdat %>%
+  mutate(
+    fit = pred$fit,
+    se = pred$se.fit,
+    lower = fit - z * se,
+    upper = fit + z * se
+  )
+
+# plot
+ggplot(newdat, aes(x = mean_age, y = fit/60, color = mode_fhr)) +   # convert to hours
+  geom_line(size = 1.2) +
+  geom_ribbon(aes(ymin = lower/60, ymax = upper/60, fill = mode_fhr), alpha = 0.2, color = NA) +
+  scale_color_manual(values = c("Control" = "#6699FF", "FHR" = "#FF6666")) +
+  scale_fill_manual(values = c("Control" = "#6699FF", "FHR" = "#FF6666")) +
+  scale_y_continuous(
+    breaks = seq(0, 24, by = 2),   # ticks every 2 hours
+    labels = function(x) sprintf("%02d:00", x %% 24)  # format as HH:00
+  ) +
+  labs(title = "Mean Sleep Midpoint Trajectories by Group",
+       x = "Age",
+       y = "Predicted Sleep Midpoint (hours)",
+       color = "Group",
+       fill = "Group") +
+  theme_minimal()
+
+```
+
+
