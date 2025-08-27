@@ -53,8 +53,8 @@ library(ggplot2)     # General plotting
 
 #Non-Mean Exploration
 ```{r}
-# setwd("C:/Users/hubshmz/Documents/Code/git/data")  # FORBOW computer
-setwd("C:/Users/zachh/Documents/Code/git/Data")  # Laptop
+setwd("C:/Users/hubshmz/Documents/Code/git/data")  # FORBOW computer
+# setwd("C:/Users/zachh/Documents/Code/git/Data")  # Laptop
 # setwd("C:/Users/zacha/Documents/RStudio/forbow/git/Data") # Tupper Windows Comp
 # setwd("C:/Users/zacha/Documents/forbow/code/git") # Home Computer
 
@@ -412,9 +412,18 @@ Ceiling effect, most of our participants have very high SRI.
 Logit? Do a log based one maybe
 ```{r}
 #Comparing a linear to nonlinear model
+merged$age2 <- merged$age^2
+linear <- lmer(SRI2_scaled ~ fhr*age  + sex +
+                 (1 | fid/subject_id/filename), data = merged, REML = FALSE)
+linear_poly <- lmer(SRI2_scaled ~ fhr*age + (age2) + sex +
+                    (1 | fid/subject_id/filename), data = merged, REML = FALSE)
+anova(linear, linear_poly)
+summary(linear_poly)
+
 linear <- gamm4(sqrt(SRI2_scaled) ~ fhr*age + sex + weekend,
                    random = ~(1 | fid / subject_id / filename),
                    data = merged)
+summary(linear$gam)
 
 merged$SRI2_binom <- merged$SRI2/100
 summary(merged$SRI2_binom)
@@ -575,7 +584,6 @@ ggplot(newdat, aes(x = mean_age, y = fit, color = mode_fhr, fill = mode_fhr)) +
     fill = "Group"
   ) +
   theme_minimal()
-
 
 ```
 notes: Deciding age range, deciding metric for model comparisons, choose a criteria that you can defend. 

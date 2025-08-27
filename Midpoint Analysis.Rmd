@@ -53,8 +53,8 @@ library(ggplot2)     # General plotting
 
 #Load Data
 ```{r}
-# setwd("C:/Users/hubshmz/Documents/Code/git/data")  # FORBOW computer
-setwd("C:/Users/zachh/Documents/Code/git/Data")  # Laptop
+setwd("C:/Users/hubshmz/Documents/Code/git/data")  # FORBOW computer
+# setwd("C:/Users/zachh/Documents/Code/git/Data")  # Laptop
 # setwd("C:/Users/zacha/Documents/RStudio/forbow/git/Data") # Tupper Windows Comp
 # setwd("C:/Users/zacha/Documents/forbow/code/git") # Home Computer
 
@@ -340,6 +340,11 @@ table(merged$fhr)
 
 ###Midpoint
 ```{r}
+linear <- lmer(sleep_midpoint_min ~ fhr*age  + sex +
+                    (1 | fid/subject_id/filename), data = merged, REML = FALSE)
+summary(linear)
+
+
 linear <- gamm4(sleep_midpoint_min ~ fhr*age + sex + weekend,
                    random = ~(1 | fid / subject_id / filename),
                    data = merged)
