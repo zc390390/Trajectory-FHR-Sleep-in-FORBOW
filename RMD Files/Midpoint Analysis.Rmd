@@ -54,8 +54,8 @@ output: html_document
 
 #Load Data
 ```{r}
-# setwd("C:/Users/hubshmz/Documents/Code/git/data")  # FORBOW computer
-setwd("C:/Users/zachh/Documents/Code/git/Data")  # Laptop
+setwd("C:/Users/hubshmz/Documents/Code/git/data")  # FORBOW computer
+# setwd("C:/Users/zachh/Documents/Code/git/Data")  # Laptop
 # setwd("C:/Users/zacha/Documents/RStudio/forbow/git/Data") # Tupper Windows Comp
 # setwd("C:/Users/zacha/Documents/forbow/code/git") # Home Computer
 
@@ -341,11 +341,22 @@ table(merged$fhr)
 
 ###Midpoint
 ```{r}
+<<<<<<< HEAD:RMD Files/Midpoint Analysis.Rmd
 merged$age_c <- merged$age - 12
 
 linear <- lmer(sleep_midpoint_min ~fhr*age_c + sex + weekend + (1|fid/subject_id), data = merged)
 summary(linear)
 
+=======
+linear <- lmer(sleep_midpoint_min ~ fhr*age  + sex +
+                    (1 | fid/subject_id/filename), data = merged, REML = FALSE)
+summary(linear)
+
+
+linear <- gamm4(sleep_midpoint_min ~ fhr*age + sex + weekend,
+                   random = ~(1 | fid / subject_id / filename),
+                   data = merged)
+>>>>>>> a14b72a8c6c3eeb5682c42f968e52441544898cc:Midpoint Analysis.Rmd
 
 nonlinear <- gamm4(sleep_midpoint_min ~ fhr + sex + weekend + s(age, by = fhr),
                    random = ~(1 | fid/ subject_id),

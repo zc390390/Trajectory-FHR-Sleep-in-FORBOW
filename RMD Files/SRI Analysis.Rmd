@@ -53,8 +53,8 @@ library(ggplot2)     # General plotting
 
 #Non-Mean Exploration
 ```{r}
-# setwd("C:/Users/hubshmz/Documents/Code/git/data")  # FORBOW computer
-setwd("C:/Users/zachh/Documents/Code/git/Data")  # Laptop
+setwd("C:/Users/hubshmz/Documents/Code/git/data")  # FORBOW computer
+# setwd("C:/Users/zachh/Documents/Code/git/Data")  # Laptop
 # setwd("C:/Users/zacha/Documents/RStudio/forbow/git/Data") # Tupper Windows Comp
 # setwd("C:/Users/zacha/Documents/forbow/code/git") # Home Computer
 
@@ -412,15 +412,26 @@ Ceiling effect, most of our participants have very high SRI.
 Logit? Do a log based one maybe
 ```{r}
 #Comparing a linear to nonlinear model
+<<<<<<< HEAD:RMD Files/SRI Analysis.Rmd
 
 
 linear <- lmer(SRI2_scaled ~ fhr*age + sex + weekend + (1| fid/subject_id), data = merged)
 
 summary(linear)
+=======
+merged$age2 <- merged$age^2
+linear <- lmer(SRI2_scaled ~ fhr*age  + sex +
+                 (1 | fid/subject_id/filename), data = merged, REML = FALSE)
+linear_poly <- lmer(SRI2_scaled ~ fhr*age + (age2) + sex +
+                    (1 | fid/subject_id/filename), data = merged, REML = FALSE)
+anova(linear, linear_poly)
+summary(linear_poly)
+>>>>>>> a14b72a8c6c3eeb5682c42f968e52441544898cc:SRI Analysis.Rmd
 
 linear <- gamm4(sqrt(SRI2_scaled) ~ fhr*age + sex + weekend,
                    random = ~(1 | fid / subject_id / filename),
                    data = merged)
+summary(linear$gam)
 
 merged$SRI2_binom <- merged$SRI2/100
 summary(merged$SRI2_binom)
@@ -494,3 +505,103 @@ ggplot(newdat, aes(x = age, y = fit, color = fhr, fill = fhr)) +
 
 ```
 
+<<<<<<< HEAD:RMD Files/SRI Analysis.Rmd
+=======
+###Subtest Mean SRI
+```{r}
+get_mode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+sum_filename <- merged %>%
+  group_by(subject_id, filename) %>%
+  summarize(
+    mean_sri = mean(SRI2, na.rm = TRUE),
+    mean_age = mean(age, na.rm = TRUE),
+    mode_sex = get_mode(sex),  # correct mode function
+    mode_fhr = get_mode(fhr),  # correct mode function
+    fid = get_mode(fid),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    mode_sex = factor(mode_sex),
+    mode_fhr = factor(mode_fhr),
+    fid = factor(fid)
+  )
+
+sum_filename$SRI2_binom <- sum_filename$mean_sri/100
+nonlinear_logit <- gamm4(
+  SRI2_binom ~ mode_fhr + mode_sex + s(mean_age, by = mode_fhr),
+  random = ~(1 | fid/subject_id),
+  family = binomial(link = "logit"),
+  weights = rep(1440, nrow(sum_filename)),  
+  data = sum_filename
+)
+
+
+diff <- difference_smooths(nonlinear_logit$gam,
+                           select = "s(mean_age)",
+                           by = "fhr",
+                           comp = list(fhr = c("FHR", "Control")))
+
+
+
+
+
+gam.check(nonlinear_logit$gam)
+
+draw(nonlinear_logit$gam)
+
+
+age_seq <- seq(min(merged$age), max(merged$age), length.out = 200)
+
+# New data grid
+newdat <- expand.grid(
+  mean_age = age_seq,
+  mode_fhr = c("Control", "FHR"),
+  mode_sex = "Female",   # keep same level as model
+  weekend = 0       # numeric
+)
+
+# Add a valid subject_id for random effect
+newdat$subject_id <- factor(merged$subject_id[1], levels = levels(merged$subject_id))
+
+# Predictions on response scale (probabilities)
+pred <- predict(nonlinear_logit$gam, newdata = newdat, type = "response", se.fit = TRUE, exclude = "s(subject_id)")
+
+# Add predicted values and CI
+z <- qnorm(0.975)  # ≈ 1.96
+
+newdat <- newdat %>%
+  mutate(
+    fit = pred$fit,
+    se = pred$se.fit,
+    lower = pmax(fit - z * se, 0),
+    upper = pmin(fit + z * se, 1)
+  )
+
+# Plot
+ggplot(newdat, aes(x = mean_age, y = fit, color = mode_fhr, fill = mode_fhr)) +
+  geom_line(size = 1.2) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2, color = NA) +
+  #scale_y_continuous(limits = c(70, 100), breaks = seq(70, 100, by = 10)) +
+  scale_color_manual(values = c("Control" = "#6699FF", "FHR" = "#FF6666")) +
+  scale_fill_manual(values = c("Control" = "#6699FF", "FHR" = "#FF6666")) +
+  labs(
+    title = "Predicted SRI (Mean) of Event by Age and Group",
+    x = "Age",
+    y = "Predicted SRI (0-1 Scale)",
+    color = "Group",
+    fill = "Group"
+  ) +
+  theme_minimal()
+
+```
+notes: Deciding age range, deciding metric for model comparisons, choose a criteria that you can defend. 
+
+Add in 3 groups: Controls w/o dep, FHR w/o dep, those with depression (look at this trajectory)
+- Is adding this as a covariate controlling or not since it has dif interactions at different ages. 
+-
+
+>>>>>>> a14b72a8c6c3eeb5682c42f968e52441544898cc:SRI Analysis.Rmd

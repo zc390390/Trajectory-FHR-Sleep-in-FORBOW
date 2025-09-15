@@ -53,8 +53,8 @@ library(ggplot2)     # General plotting
 
 #Non-Mean Exploration
 ```{r}
-# setwd("C:/Users/hubshmz/Documents/Code/git/data")  # FORBOW computer
-setwd("C:/Users/zachh/Documents/Code/git/Data")  # Laptop
+setwd("C:/Users/hubshmz/Documents/Code/git/data")  # FORBOW computer
+# setwd("C:/Users/zachh/Documents/Code/git/Data")  # Laptop
 # setwd("C:/Users/zacha/Documents/RStudio/forbow/git/Data") # Tupper Windows Comp
 # setwd("C:/Users/zacha/Documents/forbow/code/git") # Home Computer
 
@@ -355,15 +355,38 @@ merged$subject_id <- as.factor(merged$subject_id)
 ###TST
 ```{r}
 #Comparing a linear to nonlinear model
+<<<<<<< HEAD:RMD Files/TST Analysis.Rmd
 
 linear <- lmer (SleepDurationInSpt ~ fhr*age + sex + age*weekend + (1|fid/subject_id), data = merged)
 summary(linear)
+=======
+library(mgcv)
+>>>>>>> a14b72a8c6c3eeb5682c42f968e52441544898cc:TST Analysis.Rmd
 
 merged2 <- merged[!is.na(merged$BMI_filled), ]
 linear <- gamm4(SleepDurationInSpt ~ fhr*age + sex,
-                   random = ~(1 | fid / subject_id / filename),
+                   random = ~(1 | fid / subject_id / filename), REML=FALSE,
+                   data = merged)
+summary(linear)
+merged$age2 <- (merged$age)^2
+linear <- lmer(SleepDurationInSpt ~ fhr*age + sex +
+                    (1 | fid/subject_id/filename), data = merged, REML = FALSE)
+linear_poly <- lmer(SleepDurationInSpt ~ fhr*age + fhr*age2 + sex +
+                    (1 | fid/subject_id/filename), data = merged, REML = FALSE)
+anova(linear, linear_poly)
+summary(linear_poly)
+
+#Midpoint, SRI, TST
+pvals <- c(0.00552, 0.0144, 0.0229)
+
+p.adjust(pvals, method = "BH")
+
+
+nonlinear <- gamm4(SleepDurationInSpt ~ fhr + sex + s(age, by = fhr, k = 5) + s(age, k = 5),
+                   random = ~(1 | fid/ subject_id / filename), REML=FALSE,
                    data = merged)
 
+<<<<<<< HEAD:RMD Files/TST Analysis.Rmd
 nonlinear <- gamm4(SleepDurationInSpt ~ fhr + sex + s(age, by = fhr, k = 10),
                    random = ~(1 | fid/ subject_id),
                    data = merged)
@@ -373,13 +396,17 @@ summary(nonlinear$gam)
 linear_ml <- linear$mer
 nonlinear_ml <- nonlinear$mer
 anova(linear_ml, nonlinear_ml)
+=======
+>>>>>>> a14b72a8c6c3eeb5682c42f968e52441544898cc:TST Analysis.Rmd
 
 
+#Test loglik FIT
+anova(linear$mer, nonlinear$mer)
 
 gam.check(nonlinear$gam)
-
 summary(nonlinear$gam)
 
+<<<<<<< HEAD:RMD Files/TST Analysis.Rmd
 
 m1 <- gam(SleepDurationInSpt ~ sex + fhr + s(age, by = fhr, k = 10),
           data = merged, method = "REML")
@@ -389,6 +416,10 @@ plot_diff <- plot(m1, select = 2, shade = TRUE)
 library(itsadug)
 plot_diff(m1, view = "age", comp = list(fhr = c("FHR", "Control")))
 
+=======
+gam(SleepDurationInSpt ~ sex + fhr + s(age, by = fhr, k = 5),
+    data = merged)
+>>>>>>> a14b72a8c6c3eeb5682c42f968e52441544898cc:TST Analysis.Rmd
 ```
 
 ####Graph
