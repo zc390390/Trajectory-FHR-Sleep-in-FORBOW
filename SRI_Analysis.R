@@ -1,12 +1,4 @@
----
-title: "Trajectories"
-author: "Zachary"
-date: '2025-07-28'
-output: html_document
----
-
-# Library & Notes
-```{r setup, include=FALSE}
+#Library
 ## ─────────────────────────────
 ## 📦 Data Import & Manipulation
 ## ─────────────────────────────
@@ -49,10 +41,9 @@ library(webshot2)    # Save HTML tables/images
 ## 🎨 Plotting & Visualization
 ## ─────────────────────────────
 library(ggplot2)     # General plotting
-```
+
 
 #Non-Mean Exploration
-```{r}
 # setwd("C:/Users/hubshmz/Documents/Code/git/data")  # FORBOW computer
 setwd("C:/Users/zachh/Documents/Code/git/Data")  # Laptop
 # setwd("C:/Users/zacha/Documents/RStudio/forbow/git/Data") # Tupper Windows Comp
@@ -173,15 +164,10 @@ merged$wakeup <- as.numeric(merged$wakeup)
 base_date <- as.Date("2000-01-01")
 merged$sleeponset_time <- as.POSIXct(base_date) + merged$sleeponset * 3600
 merged$wakeup_time     <- as.POSIXct(base_date) + merged$wakeup * 3600
-```
+
 
 
 #SleepRegularity - dev
-this is kind of insane rn
-
-Notes:
-Seems to be calcultaing well, we need to ensure we are only inputting people who have good data though... and maybe double check its working!
-```{r}
 merged <- merged %>%
   group_by(subject_id) %>%
   arrange(desc(time_point)) %>%
@@ -262,10 +248,9 @@ merged$SRI2_scaled <- (merged$SRI2 * 2) - 100
 
 
 merged$midpoint_minutes <- merged$wakeup_minutes + merged$sleeponset_minutes / 2
-```
+
 
 #Data Setup
-```{r}
 merged <- merged %>%
   mutate(fhr = ifelse(group %in% c(1, 2, 3), 1, 0))
 
@@ -318,10 +303,9 @@ sum <- merged %>%
 sum$fhr <- factor(sum$fhr,
                        levels = c(0, 1),
                        labels = c("Control", "FHR"))
-```
+
 #Non-Mean Graphing
 ##Density plot
-```{r}
 library(ggplot2)
 library(patchwork)
 
@@ -332,10 +316,9 @@ p1 <- ggplot(sum, aes(x = SRI2m)) +
   labs(title = "SRI Mean", x = "SRI (0–100)", y = "Density") +
   theme_minimal()
 p1
-```
+
 
 ##Sleep Regularity Index
-```{r}
 a_f_WE <- ggplot(data = merged, aes(x = age, y = SRI2_scaled, color = fhr)) +
   geom_jitter(alpha = 0.3, width = 0.2, height = 0.5, size = 1.5) +
   geom_smooth(aes(group = fhr, color = as.factor(fhr)), method = "gam", se = FALSE, size = 1) +
@@ -380,14 +363,13 @@ a_f_WE <- ggplot(data = sum, aes(x = age, y = SRI2m, color = fhr)) +
     color = "Group"
   ) 
 a_f_WE
-```
+
 
 
 
 
 #Main Analysis
 ##Hypothesis 1: Trajectories  
-```{r}
 merged <- merged %>% filter(age >= 8 & age <= 22)
 merged <- merged %>% filter(group != 'Psy Risk')
 
@@ -403,184 +385,12 @@ merged$weekend <- ifelse(merged$weekday %in%
 #   )
 
 merged$subject_id <- as.factor(merged$subject_id)
-```
 
 
 ###SRI
-Ceiling effect, most of our participants have very high SRI.    
-
-Logit? Do a log based one maybe
-```{r}
 #Comparing a linear to nonlinear model
-linear <- gamm4(sqrt(SRI2_scaled) ~ fhr*age + sex + weekend,
-                   random = ~(1 | fid / subject_id / filename),
-                   data = merged)
-
-merged$SRI2_binom <- merged$SRI2/100
-summary(merged$SRI2_binom)
-nonlinear_logit <- gamm4(
-  SRI2_binom ~ fhr + sex + weekend + s(age, by = fhr),
-  random = ~(1 | fid/subject_id/filename),
-  family = binomial(link = "logit"),
-  weights = rep(1440, nrow(merged)),  
-  data = merged
-)
 
 
-diff <- difference_smooths(nonlinear_logit$gam,
-                           select = "s(age)",
-                           by = "fhr",
-                           comp = list(fhr = c("FHR", "Control")))
+linear <- lmer(SRI2_scaled ~ fhr*age + sex + weekend + (1| fid/subject_id), data = merged)
 
-
-
-
-
-gam.check(nonlinear_logit$gam)
-
-draw(nonlinear_logit$gam)
-
-
-age_seq <- seq(min(merged$age), max(merged$age), length.out = 200)
-
-# New data grid
-newdat <- expand.grid(
-  age = age_seq,
-  fhr = c("Control", "FHR"),
-  sex = "Female",   # keep same level as model
-  weekend = 0       # numeric
-)
-
-# Add a valid subject_id for random effect
-newdat$subject_id <- factor(merged$subject_id[1], levels = levels(merged$subject_id))
-
-# Predictions on response scale (probabilities)
-pred <- predict(nonlinear_logit$gam, newdata = newdat, type = "response", se.fit = TRUE, exclude = "s(subject_id)")
-
-# Add predicted values and CI
-z <- qnorm(0.975)  # ≈ 1.96
-
-newdat <- newdat %>%
-  mutate(
-    fit = pred$fit,
-    se = pred$se.fit,
-    lower = pmax(fit - z * se, 0),
-    upper = pmin(fit + z * se, 1)
-  )
-
-# Plot
-ggplot(newdat, aes(x = age, y = fit, color = fhr, fill = fhr)) +
-  geom_line(size = 1.2) +
-  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2, color = NA) +
-  #scale_y_continuous(limits = c(70, 100), breaks = seq(70, 100, by = 10)) +
-  scale_color_manual(values = c("Control" = "#6699FF", "FHR" = "#FF6666")) +
-  scale_fill_manual(values = c("Control" = "#6699FF", "FHR" = "#FF6666")) +
-  labs(
-    title = "Predicted Probability of Event by Age and Group",
-    x = "Age",
-    y = "Predicted SRI (%)",
-    color = "Group",
-    fill = "Group"
-  ) +
-  theme_minimal()
-
-```
-
-###Subtest Mean SRI
-```{r}
-get_mode <- function(x) {
-  ux <- unique(x)
-  ux[which.max(tabulate(match(x, ux)))]
-}
-
-sum_filename <- merged %>%
-  group_by(subject_id, filename) %>%
-  summarize(
-    mean_sri = mean(SRI2, na.rm = TRUE),
-    mean_age = mean(age, na.rm = TRUE),
-    mode_sex = get_mode(sex),  # correct mode function
-    mode_fhr = get_mode(fhr),  # correct mode function
-    fid = get_mode(fid),
-    .groups = "drop"
-  ) %>%
-  mutate(
-    mode_sex = factor(mode_sex),
-    mode_fhr = factor(mode_fhr),
-    fid = factor(fid)
-  )
-
-sum_filename$SRI2_binom <- sum_filename$mean_sri/100
-nonlinear_logit <- gamm4(
-  SRI2_binom ~ mode_fhr + mode_sex + s(mean_age, by = mode_fhr),
-  random = ~(1 | fid/subject_id),
-  family = binomial(link = "logit"),
-  weights = rep(1440, nrow(sum_filename)),  
-  data = sum_filename
-)
-
-
-diff <- difference_smooths(nonlinear_logit$gam,
-                           select = "s(mean_age)",
-                           by = "fhr",
-                           comp = list(fhr = c("FHR", "Control")))
-
-
-
-
-
-gam.check(nonlinear_logit$gam)
-
-draw(nonlinear_logit$gam)
-
-
-age_seq <- seq(min(merged$age), max(merged$age), length.out = 200)
-
-# New data grid
-newdat <- expand.grid(
-  mean_age = age_seq,
-  mode_fhr = c("Control", "FHR"),
-  mode_sex = "Female",   # keep same level as model
-  weekend = 0       # numeric
-)
-
-# Add a valid subject_id for random effect
-newdat$subject_id <- factor(merged$subject_id[1], levels = levels(merged$subject_id))
-
-# Predictions on response scale (probabilities)
-pred <- predict(nonlinear_logit$gam, newdata = newdat, type = "response", se.fit = TRUE, exclude = "s(subject_id)")
-
-# Add predicted values and CI
-z <- qnorm(0.975)  # ≈ 1.96
-
-newdat <- newdat %>%
-  mutate(
-    fit = pred$fit,
-    se = pred$se.fit,
-    lower = pmax(fit - z * se, 0),
-    upper = pmin(fit + z * se, 1)
-  )
-
-# Plot
-ggplot(newdat, aes(x = mean_age, y = fit, color = mode_fhr, fill = mode_fhr)) +
-  geom_line(size = 1.2) +
-  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2, color = NA) +
-  #scale_y_continuous(limits = c(70, 100), breaks = seq(70, 100, by = 10)) +
-  scale_color_manual(values = c("Control" = "#6699FF", "FHR" = "#FF6666")) +
-  scale_fill_manual(values = c("Control" = "#6699FF", "FHR" = "#FF6666")) +
-  labs(
-    title = "Predicted SRI (Mean) of Event by Age and Group",
-    x = "Age",
-    y = "Predicted SRI (0-1 Scale)",
-    color = "Group",
-    fill = "Group"
-  ) +
-  theme_minimal()
-
-
-```
-notes: Deciding age range, deciding metric for model comparisons, choose a criteria that you can defend. 
-
-Add in 3 groups: Controls w/o dep, FHR w/o dep, those with depression (look at this trajectory)
-- Is adding this as a covariate controlling or not since it has dif interactions at different ages. 
--
 

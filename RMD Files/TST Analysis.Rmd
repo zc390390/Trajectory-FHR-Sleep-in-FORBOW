@@ -223,6 +223,7 @@ sum$fhr <- factor(sum$fhr,
                        levels = c(0, 1),
                        labels = c("Control", "FHR"))
 ```
+
 #Non-Mean Graphing
 ##Density plot
 ```{r}
@@ -355,14 +356,16 @@ merged$subject_id <- as.factor(merged$subject_id)
 ```{r}
 #Comparing a linear to nonlinear model
 
+linear <- lmer (SleepDurationInSpt ~ fhr*age + sex + age*weekend + (1|fid/subject_id), data = merged)
+summary(linear)
 
 merged2 <- merged[!is.na(merged$BMI_filled), ]
 linear <- gamm4(SleepDurationInSpt ~ fhr*age + sex,
                    random = ~(1 | fid / subject_id / filename),
                    data = merged)
 
-nonlinear <- gamm4(SleepDurationInSpt ~ fhr + sex + s(age, by = fhr, k = 5),
-                   random = ~(1 | fid/ subject_id / filename),
+nonlinear <- gamm4(SleepDurationInSpt ~ fhr + sex + s(age, by = fhr, k = 10),
+                   random = ~(1 | fid/ subject_id),
                    data = merged)
 summary(nonlinear$gam)
 
@@ -376,6 +379,16 @@ anova(linear_ml, nonlinear_ml)
 gam.check(nonlinear$gam)
 
 summary(nonlinear$gam)
+
+
+m1 <- gam(SleepDurationInSpt ~ sex + fhr + s(age, by = fhr, k = 10),
+          data = merged, method = "REML")
+summary(m1)
+plot_diff <- plot(m1, select = 2, shade = TRUE)  
+
+library(itsadug)
+plot_diff(m1, view = "age", comp = list(fhr = c("FHR", "Control")))
+
 ```
 
 ####Graph
@@ -431,6 +444,7 @@ scale_fill_manual(values = c("Control" = "#6699FF", "FHR" = "#FF6666")) +
        color = "Group",
        fill = "Group") +
   theme_minimal()
+
 ```
 ####Illustate time in bed
 ```{r}

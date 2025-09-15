@@ -5,50 +5,51 @@ date: '2025-07-28'
 output: html_document
 ---
 
+  
 # Library & Notes
 ```{r setup, include=FALSE}
-## ─────────────────────────────
-## 📦 Data Import & Manipulation
-## ─────────────────────────────
-library(haven)       # Read SPSS, SAS, Stata files
-library(readr)       # Read CSVs
-library(readxl)      # Read Excel files
-library(data.table)  # Fast data manipulation
-library(dplyr)       # Data manipulation
-library(tidyr)       # Data tidying
-library(stringr)     # String operations
-library(purrr)       # Functional programming
-library(zoo)         # Time series & rolling functions
-library(lubridate)   # Dates & times
-library(fuzzyjoin)   # Fuzzy matching joins
-
-## ─────────────────────────────
-## 📊 Modeling & Statistics
-## ─────────────────────────────
-library(lme4)        # Mixed-effects models
-library(lmerTest)    # p-values for lmer
-library(coxme)       # Cox mixed-effects models
-library(survival)    # Survival analysis
-library(MuMIn)       # Model selection & R²
-library(lsmeans)     # Least-squares means (now emmeans)
-library(mgcv)        # Generalized Additive Models
-library(gratia)      # GAM diagnostics & visualization
-library(gamm4)       # GAMM fitting
-
-## ─────────────────────────────
-## 📑 Tables & Reporting
-## ─────────────────────────────
-library(broom)       # Tidy model output
-library(pander)      # Pretty markdown tables
-library(apaTables)   # APA-style tables
-library(flextable)   # Formatted tables
-library(officer)     # Export to Word/PowerPoint
-library(webshot2)    # Save HTML tables/images
-
-## ─────────────────────────────
-## 🎨 Plotting & Visualization
-## ─────────────────────────────
-library(ggplot2)     # General plotting
+  ## ─────────────────────────────
+  ## 📦 Data Import & Manipulation
+  ## ─────────────────────────────
+  library(haven)       # Read SPSS, SAS, Stata files
+  library(readr)       # Read CSVs
+  library(readxl)      # Read Excel files
+  library(data.table)  # Fast data manipulation
+  library(dplyr)       # Data manipulation
+  library(tidyr)       # Data tidying
+  library(stringr)     # String operations
+  library(purrr)       # Functional programming
+  library(zoo)         # Time series & rolling functions
+  library(lubridate)   # Dates & times
+  library(fuzzyjoin)   # Fuzzy matching joins
+  
+  ## ─────────────────────────────
+  ## 📊 Modeling & Statistics
+  ## ─────────────────────────────
+  library(lme4)        # Mixed-effects models
+  library(lmerTest)    # p-values for lmer
+  library(coxme)       # Cox mixed-effects models
+  library(survival)    # Survival analysis
+  library(MuMIn)       # Model selection & R²
+  library(lsmeans)     # Least-squares means (now emmeans)
+  library(mgcv)        # Generalized Additive Models
+  library(gratia)      # GAM diagnostics & visualization
+  library(gamm4)       # GAMM fitting
+  
+  ## ─────────────────────────────
+  ## 📑 Tables & Reporting
+  ## ─────────────────────────────
+  library(broom)       # Tidy model output
+  library(pander)      # Pretty markdown tables
+  library(apaTables)   # APA-style tables
+  library(flextable)   # Formatted tables
+  library(officer)     # Export to Word/PowerPoint
+  library(webshot2)    # Save HTML tables/images
+  
+  ## ─────────────────────────────
+  ## 🎨 Plotting & Visualization
+  ## ─────────────────────────────
+  library(ggplot2)     # General plotting
 ```
 
 #Load Data
@@ -340,12 +341,14 @@ table(merged$fhr)
 
 ###Midpoint
 ```{r}
-linear <- gamm4(sleep_midpoint_min ~ fhr*age + sex + weekend,
-                   random = ~(1 | fid / subject_id / filename),
-                   data = merged)
+merged$age_c <- merged$age - 12
+
+linear <- lmer(sleep_midpoint_min ~fhr*age_c + sex + weekend + (1|fid/subject_id), data = merged)
+summary(linear)
+
 
 nonlinear <- gamm4(sleep_midpoint_min ~ fhr + sex + weekend + s(age, by = fhr),
-                   random = ~(1 | fid/ subject_id / filename),
+                   random = ~(1 | fid/ subject_id),
                    data = merged)
 
 anova(linear$mer, nonlinear$mer)
@@ -407,7 +410,7 @@ ggplot(newdat, aes(x = age, y = fit/60, color = fhr)) +   # convert to hours
        fill = "Group") +
   theme_minimal()
 
-
+draw(diff)
 ```
 
 

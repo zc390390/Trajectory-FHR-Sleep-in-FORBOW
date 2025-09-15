@@ -1,0 +1,49 @@
+---
+title: "Big Boy Analysis"
+output: html_document
+date: "2025-09-15"
+---
+
+```{r setup, include=FALSE}
+tmp_env1 <- new.env()
+
+source("Midpoint_Analysis.R", local = tmp_env1)
+
+#Get the Results
+linear_model <- tmp_env1$linear   
+Result_Midpoint <- summary(linear_model)
+
+# Use it
+print(Result_Midpoint)
+```
+
+```{r}
+tmp_env2 <- new.env()
+
+source("SRI_Analysis.R", local = tmp_env2)
+
+#Get the Results
+linear_model <- tmp_env2$linear   
+Result_SRI <- summary(linear_model)
+
+# Use it
+print(Result_SRI)
+```
+
+
+```{r}
+tmp_env3 <- new.env()
+
+source("TST_Analysis.R", local = tmp_env3)
+
+#Get the Results
+linear_model <- tmp_env3$linear   
+Result_TST <- summary(linear_model)
+
+store <- tmp_env3$store
+
+# Use it
+print(Result_TST)
+print(store)
+```
+
