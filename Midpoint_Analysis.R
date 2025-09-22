@@ -149,6 +149,13 @@ merged <- merged %>%
 merged <- merged %>%
   mutate(fhr = ifelse(group %in% c(1, 2, 3), 1, 0))
 
+merged <- merged %>%
+  mutate(groupmdd = ifelse(group %in% c(1), 1, 0))
+merged <- merged %>% 
+  mutate(groupbp = ifelse(group %in% c(2), 1, 0))
+merged <- merged %>%
+  mutate(grouppsy = ifelse(group %in% c(3), 1, 0))
+
 merged$age <- as.numeric(as.character(merged$age))
 
 
@@ -164,7 +171,7 @@ merged$sex <- factor(merged$sex,
 merged <- merged %>% 
   filter(!is.na(group))
 
-
+merged2 <- merged
 merged <- merged %>%
   filter(group != 3)
 
@@ -283,9 +290,7 @@ longdat <- sum %>%
   )
 
 longdat$group <- interaction(longdat$fhr, longdat$sleep_measure)
-longdat$fhr <- factor(longdat$fhr,
-                      levels = c(0, 1),
-                      labels = c("Control", "FHR"))
+
 
 ggplot(longdat, aes(x = age, y = minutes, color = group)) +
   geom_point(alpha = 0.1) +
@@ -315,7 +320,7 @@ table(merged$group)
 
 # Create weekend variable: 1 for Saturday/Sunday, 0 otherwise
 merged$weekend <- ifelse(merged$weekday %in% 
-                           c("Sat", "Saturday", "Sun", "Sunday"), 1, 0)
+                           c("Sat", "Saturday", "Fri", "Friday"), 1, 0)
 
 merged$subject_id <- as.factor(merged$subject_id)
 
@@ -328,3 +333,45 @@ table(merged$fhr)
 merged$age_c <- merged$age - 12
 
 linear <- lmer(sleep_midpoint_min ~fhr*age_c + sex + weekend + (1|fid/subject_id), data = merged)
+
+merged2$age_c <- merged2$age - 12
+merged2$weekend <- ifelse(merged2$weekday %in% c("Sat", "Saturday", "Fri", "Friday"), 1, 0)
+
+linear_explore <- lmer(sleep_midpoint_min ~ groupmdd*age_c + groupbp*age_c + grouppsy*age_c + sex + weekend + (1|fid/subject_id), data = merged2)
+
+midpoint_table <- merged2 %>%
+  mutate(age = as.numeric(age)) %>%
+  group_by(subject_id, group) %>%
+  summarise(
+    median_age = median(age, na.rm = TRUE),
+    median_midpoint = median(sleep_midpoint_min, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  group_by(group) %>%
+  summarise(
+    n            = n(),
+    mean_age     = mean(median_age, na.rm = TRUE),
+    sd_age       = sd(median_age, na.rm = TRUE),
+    mean_midpoint = mean(median_midpoint, na.rm = TRUE),
+    sd_midpoint   = sd(median_midpoint, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  bind_rows(
+    merged %>%
+      mutate(age = as.numeric(age)) %>%
+      group_by(subject_id) %>%
+      summarise(
+        median_age = median(age, na.rm = TRUE),
+        median_midpoint = median(sleep_midpoint_min, na.rm = TRUE),
+        .groups = "drop"
+      ) %>%
+      summarise(
+        n            = n(),
+        mean_age     = mean(median_age, na.rm = TRUE),
+        sd_age       = sd(median_age, na.rm = TRUE),
+        mean_midpoint = mean(median_midpoint, na.rm = TRUE),
+        sd_midpoint   = sd(median_midpoint, na.rm = TRUE)
+      ) %>%
+      mutate(group = "All")
+  ) %>%
+  relocate(group, .before = n)

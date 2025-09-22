@@ -256,6 +256,12 @@ merged <- merged %>%
 
 merged$age <- as.numeric(as.character(merged$age))
 
+merged <- merged %>%
+  mutate(groupmdd = ifelse(group %in% c(1), 1, 0))
+merged <- merged %>% 
+  mutate(groupbp = ifelse(group %in% c(2), 1, 0))
+merged <- merged %>%
+  mutate(grouppsy = ifelse(group %in% c(3), 1, 0))
 
 merged$fhr <- factor(merged$fhr,
                        levels = c(0, 1),
@@ -269,101 +275,13 @@ merged$sex <- factor(merged$sex,
 merged <- merged %>% 
   filter(!is.na(group))
 
-
+merged2 <- merged
 merged <- merged %>%
   filter(group != 3)
 
-unique_data <- unique(merged[, c("subject_id", "group")])
-
-group_table <- table(unique_data$group)
-pander(group_table)
-
-
-unique_data <- unique(merged1[, c("subject_id", "group")])
-
-group_table <- table(unique_data$group)
-pander(group_table)
-
-unique_data <- unique(merged2[, c("subject_id", "group")])
-
-group_table <- table(unique_data$group)
-pander(group_table)
-
-pander(table(merged$group))
 
 merged <- merged %>%
   mutate(fhr_num = ifelse(fhr == "FHR", 1, 0))
-
-sum <- merged %>%
-  group_by(filename) %>%
-  summarise(SRI2m = mean((SRI2_scaled), na.rm=TRUE),
-            age = mean((age), na.rm=TRUE),
-            fhr = median((fhr_num), na.rm=TRUE))
-
-sum$fhr <- factor(sum$fhr,
-                       levels = c(0, 1),
-                       labels = c("Control", "FHR"))
-
-#Non-Mean Graphing
-##Density plot
-library(ggplot2)
-library(patchwork)
-
-# Plot 1: SRI2m
-p1 <- ggplot(sum, aes(x = SRI2m)) +
-  geom_density(fill = "steelblue", alpha = 0.5, color = "black") +
-  scale_x_continuous(limits = c(60, 100), breaks = seq(60, 100, 10)) +
-  labs(title = "SRI Mean", x = "SRI (0–100)", y = "Density") +
-  theme_minimal()
-p1
-
-
-##Sleep Regularity Index
-a_f_WE <- ggplot(data = merged, aes(x = age, y = SRI2_scaled, color = fhr)) +
-  geom_jitter(alpha = 0.3, width = 0.2, height = 0.5, size = 1.5) +
-  geom_smooth(aes(group = fhr, color = as.factor(fhr)), method = "gam", se = FALSE, size = 1) +
-  scale_color_brewer(palette = "Dark2") +
-  scale_y_continuous(limits = c(0, 100), breaks = seq(-100, 100, by = 20)) +
-
-  labs(
-    title = "Sleep Regularity Index Across Age by Group (Hex Binned + Smooth)",
-    x = "Age",
-    y = "Sleep Regularity Index",
-    fill = "Count",
-    color = "Group"
-  ) 
-a_f_WE
-
-a_f_WE <- ggplot(data = merged, aes(x = age, y = SRI2_scaled, color = group)) +
-  geom_jitter(alpha = 0.3, width = 0.2, height = 0.5, size = 1.5) +
-  geom_smooth(aes(group = group, color = as.factor(group)), method = "lm", se = FALSE, size = 1) +
-  scale_color_brewer(palette = "Dark2") +
-  scale_y_continuous(limits = c(0, 100), breaks = seq(-100, 100, by = 20)) +
-
-  labs(
-    title = "Sleep Regularity Index Across Age by Group (All Risks)",
-    x = "Age",
-    y = "Sleep Regularity Index",
-    fill = "Count",
-    color = "Group"
-  ) 
-a_f_WE
-
-a_f_WE <- ggplot(data = sum, aes(x = age, y = SRI2m, color = fhr)) +
-  geom_jitter(alpha = 0.3, width = 0.2, height = 0.5, size = 1.5) +
-  geom_smooth(aes(group = fhr, color = as.factor(fhr)), method = "gam", se = FALSE, size = 1) +
-  scale_color_brewer(palette = "Dark2") +
-  scale_y_continuous(limits = c(0, 100), breaks = seq(-100, 100, by = 20)) +
-
-  labs(
-    title = "Mean Sleep Regularity Index Across Age by Group (FHR)",
-    x = "Age",
-    y = "Sleep Regularity Index",
-    fill = "Count",
-    color = "Group"
-  ) 
-a_f_WE
-
 
 
 
@@ -373,11 +291,9 @@ a_f_WE
 merged <- merged %>% filter(age >= 8 & age <= 22)
 merged <- merged %>% filter(group != 'Psy Risk')
 
-table(merged$group)
-
 # Create weekend variable: 1 for Saturday/Sunday, 0 otherwise
 merged$weekend <- ifelse(merged$weekday %in% 
-                         c("Sat", "Saturday", "Sun", "Sunday"), 1, 0)
+                         c("Sat", "Saturday", "Fri", "Friday"), 1, 0)
 
 # merged <- merged %>%
 #   mutate(
@@ -394,3 +310,45 @@ merged$subject_id <- as.factor(merged$subject_id)
 linear <- lmer(SRI2_scaled ~ fhr*age + sex + weekend + (1| fid/subject_id), data = merged)
 
 
+
+merged2$age_c <- merged2$age - 12
+merged2$weekend <- ifelse(merged2$weekday %in% c("Sat", "Saturday", "Fri", "Friday"), 1, 0)
+
+linear_explore <- lmer(SRI2_scaled ~ groupmdd*age_c + groupbp*age_c + grouppsy*age_c + sex + weekend + (1|fid/subject_id), data = merged2)
+
+sri_table <- merged2 %>%
+  mutate(age = as.numeric(age)) %>%
+  group_by(subject_id, group) %>%
+  summarise(
+    median_age = median(age, na.rm = TRUE),
+    median_sri = median(SRI2_scaled, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  group_by(group) %>%
+  summarise(
+    n            = n(),
+    mean_age     = mean(median_age, na.rm = TRUE),
+    sd_age       = sd(median_age, na.rm = TRUE),
+    mean_SRI = mean(median_sri, na.rm = TRUE),
+    sd_SRI   = sd(median_sri, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  bind_rows(
+    merged %>%
+      mutate(age = as.numeric(age)) %>%
+      group_by(subject_id) %>%
+      summarise(
+        median_age = median(age, na.rm = TRUE),
+        median_sri = median(SRI2_scaled, na.rm = TRUE),
+        .groups = "drop"
+      ) %>%
+      summarise(
+        n            = n(),
+        mean_age     = mean(median_age, na.rm = TRUE),
+        sd_age       = sd(median_age, na.rm = TRUE),
+        mean_SRI = mean(median_sri, na.rm = TRUE),
+        sd_SRI   = sd(median_sri, na.rm = TRUE)
+      ) %>%
+      mutate(group = "All")
+  ) %>%
+  relocate(group, .before = n)
