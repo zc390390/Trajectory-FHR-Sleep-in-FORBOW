@@ -1,0 +1,229 @@
+---
+title: "Trajectories"
+author: "Zachary"
+date: '2025-07-28'
+output: html_document
+---
+
+  
+# Library & Notes
+```{r setup, include=FALSE}
+  ## ─────────────────────────────
+  ## 📦 Data Import & Manipulation
+  ## ─────────────────────────────
+  library(haven)       # Read SPSS, SAS, Stata files
+  library(readr)       # Read CSVs
+  library(readxl)      # Read Excel files
+  library(data.table)  # Fast data manipulation
+  library(dplyr)       # Data manipulation
+  library(tidyr)       # Data tidying
+  library(stringr)     # String operations
+  library(purrr)       # Functional programming
+  library(zoo)         # Time series & rolling functions
+  library(lubridate)   # Dates & times
+  library(fuzzyjoin)   # Fuzzy matching joins
+  
+  ## ─────────────────────────────
+  ## 📊 Modeling & Statistics
+  ## ─────────────────────────────
+  library(lme4)        # Mixed-effects models
+  library(lmerTest)    # p-values for lmer
+  library(coxme)       # Cox mixed-effects models
+  library(survival)    # Survival analysis
+  library(MuMIn)       # Model selection & R²
+  library(lsmeans)     # Least-squares means (now emmeans)
+  library(mgcv)        # Generalized Additive Models
+  library(gratia)      # GAM diagnostics & visualization
+  library(gamm4)       # GAMM fitting
+  
+  ## ─────────────────────────────
+  ## 📑 Tables & Reporting
+  ## ─────────────────────────────
+  library(broom)       # Tidy model output
+  library(pander)      # Pretty markdown tables
+  library(apaTables)   # APA-style tables
+  library(flextable)   # Formatted tables
+  library(officer)     # Export to Word/PowerPoint
+  library(webshot2)    # Save HTML tables/images
+  
+  ## ─────────────────────────────
+  ## 🎨 Plotting & Visualization
+  ## ─────────────────────────────
+  library(ggplot2)     # General plotting
+```
+
+#Load Data
+```{r}
+setwd("C:/Users/hubshmz/Documents/Code/git/data")  # FORBOW computer
+# setwd("C:/Users/zachh/Documents/Code/git/Data")  # Laptop
+# setwd("C:/Users/zacha/Documents/RStudio/forbow/git/Data") # Tupper Windows Comp
+# setwd("C:/Users/zacha/Documents/forbow/code/git") # Home Computer
+
+FOR <- readr::read_csv("FOR.csv", col_types = cols(.default = col_character())) 
+Night <- readr::read_csv("part4_nightsummary_sleep_cleaned.csv", col_types = cols(.default = col_character())) 
+NightM <- read_excel("motionloggerdata.xlsx")
+```
+
+#Merge Datasets
+```{r}
+Night$Subject_ID <- substr(Night$filename, 1, 12)
+Night$Assessment_Date <- str_extract(Night$filename, "\\d{4}-\\d{2}-\\d{2}")
+Night <- Night %>% filter(!str_detect(filename, "F[1-3]|f[1-3]|M[1-3]|m[1-3]|\\$R"))
+
+bin_files_to_remove <- c("8000103174_left wrist_068158_2025-06-03 10-40-36.bin", "8000156273_left wrist_060381_2024-11-05 12-04-08_partial.bin", "8000156273_left wrist_060381_2024-11-05 12-27-40.bin", "800304581_right wrist_060843_2024-11-05 13-16-09.bin", "800304582__060365_2024-11-05 12-03-44.bin",  "800304582__060365_2024-11-05 12-28-01.bin")
+
+Night <- Night %>% filter(!filename %in% bin_files_to_remove)
+Night <- Night %>% mutate(Subject_ID = gsub("^800-(\\d{3})-(\\d+)_$", "800-0\\1-\\2", Subject_ID))
+
+Night$Subject_ID <- gsub("-", "", Night$Subject_ID)
+Night$Subject_ID <- gsub("[a-zA-Z]", "", Night$Subject_ID)
+Night$Subject_ID <- gsub("_", "", Night$Subject_ID)
+FOR$Subject_ID <- gsub("-", "", as.character(FOR$subject_id))
+Night$SleepDurationInSpt <- as.numeric(Night$SleepDurationInSpt)
+Night <- Night %>%
+  group_by(filename) %>%
+  summarise(
+    Subject_ID = first(Subject_ID),
+    Assessment_Date = first(Assessment_Date),
+    TSTm = mean(SleepDurationInSpt, na.rm = TRUE))
+unique(Night$Subject_ID)
+
+setDT(Night)
+setDT(FOR)
+Night$geneactiv <- 1
+FOR[, Assessment_Date := as.Date(assessment_date)]
+FOR$Assessment_Date_FOR <- FOR$Assessment_Date
+Night[, Assessment_Date := as.Date(Assessment_Date)]  
+Night$Assessment_Date_Night <- Night$Assessment_Date
+
+# Perform the join with date window logic
+merged1 <- Night[FOR, on = .(Subject_ID), allow.cartesian = TRUE]
+merged1[, diffdays := abs(as.numeric(difftime(Assessment_Date_Night, Assessment_Date_FOR, units = "days")))]
+mergedfilt <- merged1 %>% filter(!diffdays <= 179)
+merged1 <- merged1 %>% filter(diffdays <= 179)
+unique(merged1$subject_id)
+
+NightM <- NightM %>%
+  mutate(filename = paste0(ID, "motionlogg"))
+NightM$weekday <- NightM$eday
+NightM <- NightM %>% 
+  filter(!str_detect(Subject_ID, "F[1-3]|f[1-3]|M[1-3]|m[1-3]|\\$R"))
+
+setDT(NightM)
+NightM[, Assessment_Date := as.Date(sdate)]
+NightM <- NightM %>%
+  group_by(filename) %>%
+  summarise(
+    Subject_ID = first(Subject_ID),
+    Assessment_Date = first(Assessment_Date),
+    TSTm = mean(SleepDurationInSpt, na.rm = TRUE))
+unique(NightM$Subject_ID)
+NightM$Assessment_date_nightM <- NightM$Assessment_Date
+
+setDT(FOR)
+setDT(NightM)
+merged2 <- NightM[FOR, on = .(Subject_ID), allow.cartesian = TRUE]
+merged2[, diffdays := abs(as.numeric(difftime(Assessment_date_nightM, Assessment_Date_FOR, units = "days")))]
+merged2 <- merged2 %>% filter(diffdays <= 179)
+merged2$motionlogger <- 1
+unique(merged2$Subject_ID)
+
+merged <- rbindlist(list(merged1, merged2), fill = TRUE)
+```
+
+#Non Participators 
+```{r}
+list <- unique(merged$Subject_ID)
+unmerged <- FOR[!Subject_ID %in% list]
+unique(unmerged$Subject_ID)
+unmerged <- unmerged %>%
+    group_by(Subject_ID) %>%
+    slice(n() - 1)
+
+unmerged <- unmerged %>%
+  mutate(Year = year(Assessment_Date))   # permanently adds Year
+
+# Check it's there:
+table(unmerged$Year)
+
+unmerged %>%
+  mutate(Year = year(Assessment_Date)) %>%
+  ggplot(aes(x = factor(Year))) +
+  geom_bar() +
+  labs(
+    title = "Distribution of Assessment Dates (by Year)",
+    x = "Year",
+    y = "Number of Assessments"
+  ) +
+  theme_minimal()
+
+table(unmerged$Year)
+
+table(merged$geneactiv)
+table(merged$motionlogger)
+
+
+
+```
+
+
+#Demographics
+```{r}
+merged$age <- as.numeric(merged$age)
+merged$time_point <- as.numeric(merged$time_point)
+
+merged <- merged %>%
+  group_by(subject_id) %>%
+  arrange(desc(time_point)) %>%
+  mutate(
+    NxtYr1 = lag(ccMDD, 1),
+    NxtYr2 = lag(ccMDD, 2),
+    NxtYr3 = lag(ccMDD, 3),
+    NxtYr4 = lag(ccMDD, 4),
+    NxtYr5 = lag(ccMDD, 5),
+    NxtYr6 = lag(ccMDD, 6),
+    NxtYr7 = lag(ccMDD, 7),
+    NxtYr8 = lag(ccMDD, 8),
+    NxtYr9 = lag(ccMDD, 9),
+    NxtYr10 = lag(ccMDD, 10),
+    NxtYr11 = lag(ccMDD, 11),
+    NxtYr12 = lag(ccMDD, 12),
+    NxtYr13 = lag(ccMDD, 13),
+    NxtYr14 = lag(ccMDD, 14),
+    NxtYr15 = lag(ccMDD, 15),
+    NxtYr16 = lag(ccMDD, 16)
+  ) %>%
+  mutate(
+    NxtDepression = if_else(
+      rowSums(across(all_of(paste0("NxtYr", 1:1)), ~ . == 1), na.rm = TRUE) > 0,
+      1, 0
+    )
+  ) %>%
+  ungroup()
+
+merged_s <- merged 
+
+merged_s <- merged_s %>%
+  group_by(group, Subject_ID) %>% 
+  summarise(
+    age = mean(age, na.rm = TRUE),
+    time_point = mean(time_point, na.rm = TRUE),
+    NxtDepression = max(NxtDepression, na.rm = TRUE),
+    .groups = "drop"
+  ) %>% 
+  group_by(group) %>%
+  summarise(
+    n          = n(),  # number of unique IDs in each group
+    age_mean   = mean(age, na.rm = TRUE),
+    age_sd     = sd(age, na.rm = TRUE),
+    Follow_mean = mean(time_point, na.rm = TRUE),
+    Follow_sd   = sd(time_point, na.rm = TRUE),
+    sum_NxtMDD = sum(NxtDepression, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+pander(merged_s)
+```
+
+
+
